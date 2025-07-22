@@ -49,7 +49,7 @@ export function HomePage() {
 
       {/* Paket Cards */}
       <div className="flex flex-col items-center py-16">
-        <div className="flex flex-col md:flex-row gap-8 w-full max-w-5xl justify-center">
+        <div className="flex flex-col lg:flex-row gap-8 w-full max-w-5xl justify-center">
           {tiers.map((tier, idx) => (
             <div
               key={tier.name}
