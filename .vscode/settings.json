@@ -1,0 +1,72 @@
+{
+    "IDX.aI.enableInlineCompletion": true,
+    "IDX.aI.enableCodebaseIndexing": true,
+    
+    // Editor settings
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "always"
+    },
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    
+    // TypeScript/JavaScript settings
+    "[typescript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    
+    // Go settings
+    "[go]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "golang.go"
+    },
+    "go.lintTool": "golangci-lint",
+    "go.lintOnSave": "package",
+    "go.formatTool": "goimports",
+    
+    // Tailwind settings
+    "tailwindCSS.includeLanguages": {
+        "typescript": "javascript",
+        "typescriptreact": "javascript"
+    },
+    "tailwindCSS.emmetCompletions": true,
+    
+    // ESLint settings
+    "eslint.validate": [
+        "javascript",
+        "javascriptreact",
+        "typescript",
+        "typescriptreact"
+    ],
+    
+    // File associations
+    "files.associations": {
+        "*.css": "tailwindcss",
+        "*.go": "go"
+    },
+    
+    // Terminal settings
+    "terminal.integrated.defaultProfile.osx": "zsh",
+    
+    // Recommended extensions
+    "extensions.recommendations": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "dsznajder.es7-react-js-snippets",
+        "wix.vscode-import-cost",
+        "usernamehw.errorlens",
+        "golang.go",
+        "premparihar.gotestexplorer",
+        "766b.go-outliner",
+        "golang.go-coverage",
+        "cweijan.vscode-postgresql-client2",
+        "mtxr.sqltools",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker",
+        "rangav.vscode-thunder-client",
+        "humao.rest-client"
+    ]
+}

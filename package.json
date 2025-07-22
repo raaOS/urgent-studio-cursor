@@ -1,0 +1,19 @@
+{
+  "name": "urgent-studio-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"sleep 8 && open http://localhost:9005 && open http://localhost:8080/admin\"",
+    "mulai": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"sleep 8 && open http://localhost:9005 && open http://localhost:8080/admin\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && go run .",
+    "build": "cd frontend && npm run build",
+    "start": "cd frontend && npm run start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

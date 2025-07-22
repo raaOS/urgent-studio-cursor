@@ -1,0 +1,38 @@
+# Common
+.git
+.github
+.gitignore
+.vscode
+.idea
+*.md
+LICENSE
+
+# Node.js (Frontend)
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/dist
+frontend/build
+frontend/coverage
+frontend/.env*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Go (Backend)
+backend/tmp
+backend/vendor
+backend/*.exe
+backend/*.exe~
+backend/*.dll
+backend/*.so
+backend/*.dylib
+backend/*.test
+backend/*.out
+
+# Docker
+docker-compose.yml
+docker-compose.*.yml
+
+# Database
+database/data

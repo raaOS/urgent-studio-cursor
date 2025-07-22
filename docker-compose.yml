@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Frontend service (Next.js)
+  frontend:
+    image: node:20-alpine
+    container_name: urgent-studio-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "9005:9005"
+      - "9006:9006"
+    command: sh -c "npm install && npm run dev"
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - backend
+    networks:
+      - urgent-studio-network
+
+  # Backend service (Go/Gin)
+  backend:
+    image: golang:1.24-alpine
+    container_name: urgent-studio-backend
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8080:8080"
+    command: sh -c "go mod download && go run ."
+    environment:
+      - GIN_MODE=debug
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=urgent_studio
+    depends_on:
+      - postgres
+    networks:
+      - urgent-studio-network
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: urgent-studio-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=urgent_studio
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d
+    networks:
+      - urgent-studio-network
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: urgent-studio-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@urgentstudio.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - urgent-studio-network
+
+networks:
+  urgent-studio-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
