@@ -1,6 +1,7 @@
 
 "use client";
 
+import Link from "next/link";
 import React from "react";
 
 const tiers = [
@@ -50,7 +51,7 @@ export function HomePage() {
       {/* Paket Cards */}
       <div className="flex flex-col items-center py-16">
         <div className="flex flex-col lg:flex-row gap-8 w-full max-w-5xl justify-center">
-          {tiers.map((tier, idx) => (
+          {tiers.map((tier) => (
             <div
               key={tier.name}
               className="relative bg-white border-2 border-black rounded-2xl shadow-lg p-6 flex-1 min-w-[300px] max-w-[350px] flex flex-col"
@@ -90,11 +91,9 @@ export function HomePage() {
           ))}
         </div>
         {/* Tombol oranye besar di bawah grid */}
-        <button
-          className="w-full md:w-1/2 bg-gradient-to-r from-[#ff9900] to-[#ff6600] text-white font-bold text-base py-4 rounded-lg shadow-md border-2 border-black hover:brightness-95 transition-all mt-12"
-        >
+        <Link href="/products" className="w-full md:w-1/2 bg-gradient-to-r from-[#ff9900] to-[#ff6600] text-white font-bold text-base py-4 rounded-lg shadow-md border-2 border-black hover:brightness-95 transition-all mt-12 text-center inline-block">
           Lihat Produk
-        </button>
+        </Link>
       </div>
     </div>
   );

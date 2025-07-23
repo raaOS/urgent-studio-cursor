@@ -1,0 +1,293 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
+  GO_VERSION: '1.21'
+
+jobs:
+  # Frontend Tests
+  frontend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Type check
+      run: npm run type-check
+    
+    - name: Lint
+      run: npm run lint
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Build
+      run: npm run build
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/.next/
+        retention-days: 7
+
+  # Backend Tests
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_USER: testuser
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Install dependencies
+      run: go mod download
+    
+    - name: Run tests
+      run: go test -v ./...
+      env:
+        DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb?sslmode=disable
+    
+    - name: Build
+      run: go build -o main .
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-build
+        path: backend/main
+        retention-days: 7
+
+  # Security Scan
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [frontend-tests, backend-tests]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Docker Build and Test
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [frontend-tests, backend-tests]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: false
+        tags: urgent-studio-frontend:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: false
+        tags: urgent-studio-backend:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Test Docker Compose
+      run: |
+        cp .env.example .env
+        docker-compose -f docker-compose.test.yml up -d
+        sleep 30
+        docker-compose -f docker-compose.test.yml ps
+        docker-compose -f docker-compose.test.yml down
+
+  # Integration Tests
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup test environment
+      run: |
+        cp .env.example .env
+        docker-compose -f docker-compose.test.yml up -d
+        sleep 45
+    
+    - name: Wait for services
+      run: |
+        timeout 60 bash -c 'until curl -f http://localhost:3000/api/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+    
+    - name: Run integration tests
+      run: |
+        # Test frontend health
+        curl -f http://localhost:3000/api/health
+        
+        # Test backend health
+        curl -f http://localhost:8080/health
+        
+        # Test API endpoints
+        curl -f http://localhost:3000/api/ping
+    
+    - name: Cleanup
+      if: always()
+      run: docker-compose -f docker-compose.test.yml down -v
+
+  # Performance Tests
+  performance-tests:
+    runs-on: ubuntu-latest
+    needs: [integration-tests]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup test environment
+      run: |
+        cp .env.example .env
+        docker-compose -f docker-compose.test.yml up -d
+        sleep 45
+    
+    - name: Install Apache Bench
+      run: sudo apt-get update && sudo apt-get install -y apache2-utils
+    
+    - name: Run performance tests
+      run: |
+        # Test frontend performance
+        ab -n 100 -c 10 http://localhost:3000/ > frontend-perf.txt
+        
+        # Test API performance
+        ab -n 50 -c 5 http://localhost:3000/api/health > api-perf.txt
+        
+        # Extract and display results
+        echo "Frontend average response time: $(grep 'Time per request' frontend-perf.txt | head -1 | awk '{print $4}') ms"
+        echo "API average response time: $(grep 'Time per request' api-perf.txt | head -1 | awk '{print $4}') ms"
+    
+    - name: Upload performance results
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-results
+        path: |
+          frontend-perf.txt
+          api-perf.txt
+        retention-days: 30
+    
+    - name: Cleanup
+      if: always()
+      run: docker-compose -f docker-compose.test.yml down -v
+
+  # Deploy to Staging (on main branch)
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [integration-tests, security-scan]
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        # Add your staging deployment commands here
+        # Example: ssh to staging server and run deployment script
+        echo "✅ Staging deployment completed"
+
+  # Deploy to Production (manual approval required)
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, performance-tests]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production environment..."
+        # Add your production deployment commands here
+        # Example: ssh to production server and run deployment script
+        echo "✅ Production deployment completed"
+    
+    - name: Notify deployment
+      run: |
+        echo "📢 Production deployment notification sent"
+        # Add notification logic (Slack, email, etc.)
+
+  # Cleanup
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always()
+    
+    steps:
+    - name: Cleanup artifacts
+      run: |
+        echo "🧹 Cleaning up temporary artifacts..."
+        # Add cleanup commands if needed

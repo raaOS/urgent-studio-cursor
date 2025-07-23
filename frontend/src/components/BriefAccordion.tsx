@@ -1,196 +1,224 @@
 
-"use client";
+'use client';
 
-import { UseFormReturn } from "react-hook-form";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Button } from "@/components/ui/button";
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { BriefFormValues } from "./BriefForm";
-import { Trash2, X, ChevronUp } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { cn } from "@/lib/utils";
-import type { Product } from "@/lib/types";
+import React from 'react';
+import { Trash2 } from 'lucide-react';
+import { UseFormReturn, UseFieldArrayRemove } from 'react-hook-form';
 
-interface BriefAccordionProps {
-    form: UseFormReturn<BriefFormValues>;
-    fields: (any & { originalIndex: number })[];
-    remove: (index?: number | number[]) => void;
-    tier: string;
-    openItems: string[];
-    setOpenItems: (items: string[]) => void;
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import type { Brief } from '@/lib/types';
+
+// Interfaces
+interface BriefFieldWithIndex {
+  id: string;
+  originalIndex: number;
 }
 
-export function BriefAccordion({ form, fields, remove, tier, openItems, setOpenItems }: BriefAccordionProps) {
-    const { control, getValues, trigger, setValue } = form;
+interface BriefAccordionProps {
+  form: UseFormReturn<{ briefs: Brief[] }>;
+  fields: BriefFieldWithIndex[];
+  remove: UseFieldArrayRemove;
+  openItems: string[];
+  setOpenItems: (items: string[]) => void;
+}
 
-    const handleRemoveBrief = (indexToRemove: number) => {
-        remove(indexToRemove);
-        
-        const updatedBriefs = getValues('briefs');
-        
-        const updatedCart: Product[] = updatedBriefs.map(b => ({
-            id: b.productId,
-            name: b.productName,
-            tier: b.tier,
-            price: 0, // Harga tidak relevan di sini
-            instanceId: b.instanceId,
-            briefDetails: b.briefDetails,
-            googleDriveAssetLinks: b.googleDriveAssetLinks,
-            width: b.width,
-            height: b.height,
-            unit: b.unit,
-        }));
-        
-        sessionStorage.setItem("globalCart", JSON.stringify(updatedCart));
-        window.dispatchEvent(new Event('cartUpdated'));
-    };
+// Constants
+const UNIT_OPTIONS = [
+  { value: 'cm', label: 'Centimeter (cm)' },
+  { value: 'mm', label: 'Milimeter (mm)' },
+  { value: 'inch', label: 'Inch' },
+  { value: 'px', label: 'Pixel (px)' }
+] as const;
 
+// Component
+export function BriefAccordion({ form, fields, remove, openItems, setOpenItems }: BriefAccordionProps): JSX.Element {
+  const { control, getValues } = form;
+
+  const handleRemoveBrief = (index: number): void => {
+    const brief = getValues(`briefs.${index}`);
+    if (brief) {
+      // Remove from openItems
+      const newOpenItems = openItems.filter(item => item !== brief.instanceId);
+      setOpenItems(newOpenItems);
+    }
+    remove(index);
+  };
+
+  const toggleAccordionItem = (instanceId: string): void => {
+    const newOpenItems = openItems.includes(instanceId)
+      ? openItems.filter(item => item !== instanceId)
+      : [...openItems, instanceId];
+    setOpenItems(newOpenItems);
+  };
+
+  if (fields.length === 0) {
     return (
-        <div className="space-y-2">
-            <Accordion 
-                type="multiple" 
-                className="w-full space-y-2"
-                value={openItems}
-                onValueChange={setOpenItems}
-            >
-                {fields.map((field, index) => {
-                    const briefInstanceId = getValues(`briefs.${field.originalIndex}.instanceId`);
-                    const productName = getValues(`briefs.${field.originalIndex}.productName`);
-                    const briefNumber = String(index + 1).padStart(2, '0');
-
-                    const isAccordionOpen = openItems.includes(briefInstanceId);
-
-                    return (
-                    <AccordionItem 
-                        key={briefInstanceId} 
-                        value={briefInstanceId}
-                        className="bg-white border-2 border-foreground rounded-md overflow-hidden"
-                    >
-                         <div className="flex items-center justify-between w-full p-2.5">
-                            <div className="font-semibold text-sm">
-                                {briefNumber} - {productName}
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-9 w-9 p-0 text-xs border-2 border-foreground bg-background hover:bg-destructive/10"
-                                    onClick={() => handleRemoveBrief(field.originalIndex)}
-                                    title="Hapus Pesanan"
-                                >
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                                <AccordionTrigger className="p-0">
-                                  <div className="w-9 h-9 flex items-center justify-center border-2 border-foreground rounded-md bg-white">
-                                    <ChevronUp className={cn("h-5 w-5 shrink-0 transition-transform duration-200", !isAccordionOpen && "rotate-180")}/>
-                                  </div>
-                                </AccordionTrigger>
-                            </div>
-                        </div>
-
-                        <AccordionContent className="space-y-6 px-4">
-                            <div className="space-y-4">
-                                <FormField
-                                    control={control}
-                                    name={`briefs.${field.originalIndex}.briefDetails`}
-                                    render={({ field: formField }) => (
-                                        <FormItem>
-                                            <FormLabel className="text-sm">Detail Brief</FormLabel>
-                                            <FormControl>
-                                                <Textarea
-                                                    placeholder="Jelaskan detail desain yang Anda inginkan di sini..."
-                                                    {...formField}
-                                                    className="min-h-[100px]"
-                                                    onBlur={() => trigger(`briefs.${field.originalIndex}.briefDetails`)}
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                                        <FormField
-                                            control={control}
-                                            name={`briefs.${field.originalIndex}.width`}
-                                            render={({ field: formField }) => (
-                                                <FormItem>
-                                                    <FormLabel className="text-sm">Lebar</FormLabel>
-                                                    <FormControl>
-                                                        <Input type="number" placeholder="1080" {...formField} onChange={event => formField.onChange(event.target.value === '' ? '' : Number(event.target.value))}/>
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                        <X className="h-4 w-4 text-muted-foreground self-end mb-2.5" />
-                                         <FormField
-                                            control={control}
-                                            name={`briefs.${field.originalIndex}.height`}
-                                            render={({ field: formField }) => (
-                                                <FormItem>
-                                                    <FormLabel className="text-sm">Tinggi</FormLabel>
-                                                    <FormControl>
-                                                        <Input type="number" placeholder="1080" {...formField} onChange={event => formField.onChange(event.target.value === '' ? '' : Number(event.target.value))}/>
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </div>
-
-                                    <FormField
-                                        control={control}
-                                        name={`briefs.${field.originalIndex}.unit`}
-                                        render={({ field: formField }) => (
-                                            <FormItem>
-                                            <FormLabel className="text-sm">Satuan</FormLabel>
-                                            <Select onValueChange={formField.onChange} defaultValue={formField.value}>
-                                                <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Pilih satuan" />
-                                                </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    <SelectItem value="px">piksel (px)</SelectItem>
-                                                    <SelectItem value="cm">sentimeter (cm)</SelectItem>
-                                                    <SelectItem value="mm">milimeter (mm)</SelectItem>
-                                                    <SelectItem value="in">inci (in)</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                <FormField
-                                    control={control}
-                                    name={`briefs.${field.originalIndex}.googleDriveAssetLinks`}
-                                    render={({ field: formField }) => (
-                                        <FormItem>
-                                            <FormLabel className="text-sm">Tautan Aset Google Drive (Opsional)</FormLabel>
-                                            <FormControl>
-                                                <Input 
-                                                    placeholder="https://drive.google.com/..." 
-                                                    {...formField} 
-                                                    onBlur={() => trigger(`briefs.${field.originalIndex}.googleDriveAssetLinks`)}
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
-                        </AccordionContent>
-                    </AccordionItem>
-                )})}
-            </Accordion>
-        </div>
+      <div className="text-center py-8 text-gray-500">
+        <p>Belum ada brief yang ditambahkan.</p>
+        <p className="text-sm mt-2">Brief akan muncul di sini setelah Anda menambahkan produk ke keranjang.</p>
+      </div>
     );
+  }
+
+  return (
+    <Accordion 
+      type="multiple" 
+      className="w-full space-y-4"
+      value={openItems}
+      onValueChange={setOpenItems}
+    >
+      {fields.map((field, index) => {
+        const brief = getValues(`briefs.${field.originalIndex}`);
+        return (
+          <AccordionItem 
+            key={field.id} 
+            value={brief.instanceId}
+            className="border border-gray-200 rounded-lg px-4"
+          >
+            <AccordionTrigger className="hover:no-underline">
+              <div className="flex items-center justify-between w-full">
+                <span className="font-medium">
+                  {brief.productName} - {brief.briefDetails || 'Belum ada detail'}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e: React.MouseEvent<HTMLButtonElement>): void => {
+                    e.stopPropagation();
+                    handleRemoveBrief(field.originalIndex);
+                  }}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <FormField
+                control={control}
+                name={`briefs.${field.originalIndex}.briefDetails`}
+                render={({ field: formField }) => (
+                  <FormItem>
+                    <FormLabel>Detail Brief</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Jelaskan detail desain yang Anda inginkan..."
+                        className="min-h-[100px]"
+                        {...formField}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormField
+                  control={control}
+                  name={`briefs.${field.originalIndex}.width`}
+                  render={({ field: formField }) => (
+                    <FormItem>
+                      <FormLabel>Lebar</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          step="0.1"
+                          {...formField}
+                          value={formField.value === '' ? '' : formField.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            formField.onChange(value === '' ? '' : parseFloat(value) || '');
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={control}
+                  name={`briefs.${field.originalIndex}.height`}
+                  render={({ field: formField }) => (
+                    <FormItem>
+                      <FormLabel>Tinggi</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          step="0.1"
+                          {...formField}
+                          value={formField.value === '' ? '' : formField.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            formField.onChange(value === '' ? '' : parseFloat(value) || '');
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={control}
+                  name={`briefs.${field.originalIndex}.unit`}
+                  render={({ field: formField }) => (
+                    <FormItem>
+                      <FormLabel>Satuan</FormLabel>
+                      <Select
+                        value={formField.value || ''}
+                        onValueChange={formField.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih satuan" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {UNIT_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <FormField
+                control={control}
+                name={`briefs.${field.originalIndex}.googleDriveAssetLinks`}
+                render={({ field: formField }) => (
+                  <FormItem>
+                    <FormLabel>Link Google Drive (Opsional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="url"
+                        placeholder="https://drive.google.com/..."
+                        {...formField}
+                        value={formField.value || ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        );
+      })}
+    </Accordion>
+  );
 }

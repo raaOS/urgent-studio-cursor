@@ -2,23 +2,26 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useFieldArray } from "react-hook-form";
-import { z } from "zod";
+import { Loader2, ArrowLeft, Home, FileText, Scaling } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import { Loader2, ArrowLeft, Home, FileText, Scaling } from "lucide-react";
+import { useForm, useFieldArray } from "react-hook-form";
+import { z } from "zod";
+
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
+import { useToast } from "@/hooks/use-toast";
 import { getAllProducts } from "@/lib/products";
-import { createMultipleOrdersFromCart } from "@/services/orderService";
-import { BriefAccordion } from "./BriefAccordion";
-import { cn } from "@/lib/utils";
-import Link from "next/link";
-import { Separator } from "./ui/separator";
 import type { Product } from "@/lib/types";
 import { BriefSchema } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { createMultipleOrdersFromCart } from "@/services/orderService";
+
+import { BriefAccordion } from "./BriefAccordion";
+import { Separator } from "./ui/separator";
+
 
 const briefFormSchema = z.object({
   briefs: z.array(BriefSchema),
@@ -26,7 +29,7 @@ const briefFormSchema = z.object({
 
 export type BriefFormValues = z.infer<typeof briefFormSchema>;
 
-export function BriefForm() {
+export function BriefForm(): JSX.Element {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -49,24 +52,42 @@ export function BriefForm() {
 
   useEffect(() => {
     const cartFromSession = sessionStorage.getItem("globalCart");
-    if (cartFromSession) {
+    if (cartFromSession !== null && cartFromSession !== '') {
       try {
         const cartItems: Product[] = JSON.parse(cartFromSession);
-        const newBriefs = cartItems.map((product, index) => ({
-          instanceId: product.instanceId || `${product.id}-${Date.now() + index}`,
-          productId: product.id,
-          productName: product.name,
-          tier: product.tier,
-          briefDetails: product.briefDetails || "",
-          googleDriveAssetLinks: product.googleDriveAssetLinks || "",
-          width: product.width || '',
-          height: product.height || '',
-          unit: product.unit || 'px',
-        }));
+        const newBriefs = cartItems.map((product, index) => {
+          // Konversi width dan height ke tipe yang sesuai dengan BriefSchema
+          let width: number | "" | undefined = undefined;
+          let height: number | "" | undefined = undefined;
+          
+          if (product.width === '') {
+            width = '';
+          } else if (typeof product.width === 'number') {
+            width = product.width;
+          }
+          
+          if (product.height === '') {
+            height = '';
+          } else if (typeof product.height === 'number') {
+            height = product.height;
+          }
+          
+          return {
+            instanceId: product.instanceId ?? `${product.id}-${Date.now() + index}`,
+            productId   : product.id,
+            productName: product.name,
+            tier: product.tier,
+            briefDetails: product.briefDetails ?? "",
+            googleDriveAssetLinks   : product.googleDriveAssetLinks ?? "",
+            width,
+            height,
+            unit: product.unit ?? 'px',
+          };
+        });
         
         replace(newBriefs);
       } catch (error) {
-        console.error("Gagal mem-parse keranjang dari sessionStorage:", error);
+        console.error("Gagal mem-parse keranjang dari sessionStorage   : ", error);
         toast({
           variant: "destructive",
           title: "Data Keranjang Tidak Valid",
@@ -82,12 +103,12 @@ export function BriefForm() {
       if (!acc[brief.tier]) {
         acc[brief.tier] = [];
       }
-      acc[brief.tier].push({ ...field, originalIndex: index });
+      acc[brief.tier]!.push({ ...field, originalIndex: index });
       return acc;
     }, {} as Record<string, (typeof fields[0] & { originalIndex: number })[]>);
   }, [fields, getValues]);
 
-  const handleValidationErrors = (errors: any) => {
+  const handleValidationErrors = (errors: Record<string, unknown>) => {
     if (errors.briefs) {
         const firstErrorKey = Object.keys(errors.briefs)[0];
         if (firstErrorKey) {
@@ -99,7 +120,7 @@ export function BriefForm() {
 
                 setOpenAccordionItemsPerTier(prev => ({
                     ...prev,
-                    [tier]: [...new Set([...(prev[tier] || []), instanceId])]
+                    [tier]: [...new Set([...(prev[tier] ?? []), instanceId])]
                 }));
 
                 toast({
@@ -132,8 +153,8 @@ export function BriefForm() {
                 id: b.productId,
                 name: b.productName,
                 tier: b.tier,
-                price: productInfo?.price || 0,
-                promoPrice: productInfo?.promoPrice,
+                price: productInfo?.price ?? 0,
+                promoPrice    : productInfo?.promoPrice,
                 instanceId: b.instanceId,
                 briefDetails: b.briefDetails,
                 googleDriveAssetLinks: b.googleDriveAssetLinks,
@@ -153,7 +174,7 @@ export function BriefForm() {
         router.push(`/checkout/summary?orderIds=${newOrderIds.join(',')}`);
 
     } catch (error) {
-      console.error("Gagal menyimpan pesanan:", error);
+      console.error("Gagal menyimpan pesanan   : ", error);
       toast({
         variant: "destructive",
         title: "Gagal Menyimpan Pesanan",
@@ -163,17 +184,17 @@ export function BriefForm() {
     }
   }
   
-  const handleOpenProductDialog = () => {
+  const handleOpenProductDialog = (): void => {
     const currentBriefs = getValues('briefs').map(brief => {
         const productInfo = getAllProducts().find(p => p.id === brief.productId);
         return {
           id: brief.productId,
           name: brief.productName,
           tier: brief.tier,
-          price: productInfo?.price || 0,
-          promoPrice: productInfo?.promoPrice,
+          price: productInfo?.price ?? 0,
+          promoPrice    : productInfo?.promoPrice,
           imageUrl: productInfo?.imageUrl,
-          instanceId: brief.instanceId,
+          instanceId    : brief.instanceId,
           briefDetails: brief.briefDetails,
           googleDriveAssetLinks: brief.googleDriveAssetLinks,
           width: brief.width,
@@ -198,6 +219,14 @@ export function BriefForm() {
         }
 
         const sourceBrief = tierBriefs[0];
+        if (!sourceBrief) {
+            toast({
+                variant: 'destructive',
+                title: "Error",
+                description: "Tidak dapat menemukan item pertama di tier ini.",
+            });
+            return;
+        }
 
         if (type === 'details' && !sourceBrief.briefDetails) {
             toast({
@@ -208,9 +237,9 @@ export function BriefForm() {
             return;
         }
 
-        if (type === 'dimensions' && (!sourceBrief.width || !sourceBrief.height)) {
+        if (type === 'dimensions' && (!sourceBrief.width || !sourceBrief.height || String(sourceBrief.width) === '' || String(sourceBrief.height) === '')) {
             toast({
-                variant: 'destructive',
+                variant : 'destructive',
                 title: "Ukuran Pertama Tidak Lengkap",
                 description: "Isi lebar dan tinggi pada item pertama untuk dapat menyalinnya.",
             });
@@ -219,7 +248,7 @@ export function BriefForm() {
         
         let copiedCount = 0;
         allBriefs.forEach((brief, idx) => {
-            if (brief.tier !== tier || brief.instanceId === sourceBrief.instanceId) return;
+            if (brief.tier !== tier || brief.instanceId === sourceBrief.instanceId) {return;}
 
             if (type === 'details') {
                 setValue(`briefs.${idx}.briefDetails`, sourceBrief.briefDetails);
@@ -234,7 +263,7 @@ export function BriefForm() {
 
         if (copiedCount > 0) {
             toast({
-                title: "Berhasil Disalin!",
+                title : "Berhasil Disalin!",
                 description: `Data dari item pertama telah disalin ke ${copiedCount} item lain di tier ini.`,
             });
         }
@@ -308,23 +337,23 @@ export function BriefForm() {
                                             type="button"
                                             variant="outline"
                                             size="sm"
-                                            className="h-8 text-xs border-2 border-foreground bg-background w-full sm:w-auto"
+                                            className="h-8 text-xs border-2 border-foreground bg-background w-full sm:w-auto overflow-hidden"
                                             onClick={() => handleApplyTemplateToTier(tier, 'details')}
                                             title={"Salin Detail & Aset dari item pertama ke semua item di tier ini"}
                                         >
                                             <FileText className="h-3 w-3 text-primary mr-1.5" />
-                                            Salin Detail ke Semua
+                                            <span className="overflow-hidden text-ellipsis">Salin Detail ke Semua</span>
                                         </Button>
                                         <Button
                                             type="button"
                                             variant="outline"
                                             size="sm"
-                                            className="h-8 text-xs border-2 border-foreground bg-[#ff9900] text-white w-full sm:w-auto hover:bg-[#ff9900]/90 focus:outline-none"
+                                            className="h-8 text-xs border-2 border-foreground bg-[#ff9900] text-white w-full sm:w-auto hover:bg-[#ff9900]/90 focus:outline-none overflow-hidden"
                                             onClick={() => handleApplyTemplateToTier(tier, 'dimensions')}
                                             title={"Salin Ukuran dari item pertama ke semua item di tier ini"}
                                         >
                                             <Scaling className="h-3 w-3 text-white mr-1.5" />
-                                            Salin Ukuran ke Semua
+                                            <span className="overflow-hidden text-ellipsis">Salin Ukuran ke Semua</span>
                                         </Button>
                                     </div>
 
@@ -332,7 +361,6 @@ export function BriefForm() {
                                         form={form}
                                         fields={briefs}
                                         remove={remove}
-                                        tier={tier}
                                         openItems={openAccordionItemsPerTier[tier] || []}
                                         setOpenItems={(items) => setOpenAccordionItemsPerTier(prev => ({...prev, [tier]: items}))}
                                     />
@@ -343,17 +371,17 @@ export function BriefForm() {
                                     type="button" 
                                     variant="outline"
                                     onClick={handleOpenProductDialog}
-                                    className="h-12 text-base font-bold border-2 border-foreground w-full bg-[#ffe502] text-foreground hover:bg-[#ffe502]/90">
-                                    +desain
+                                    className="h-12 text-base font-bold border-2 border-foreground w-full bg-[#ffe502] text-foreground hover:bg-[#ffe502]/90 overflow-hidden">
+                                    <span className="overflow-hidden text-ellipsis">+desain</span>
                                 </Button>
                                 <Button 
                                     type="submit" 
                                     disabled={isLoading || fields.length === 0} 
                                     className={cn(
-                                        "w-full h-12 text-base font-bold border-2 border-foreground hover:shadow-neo-hover active:shadow-neo-sm transition-all disabled:bg-muted disabled:shadow-none disabled:text-muted-foreground disabled:cursor-not-allowed",
-                                        isLoading ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground hover:bg-accent/90"
+                                        "w-full h-12 text-base font-bold border-2 border-foreground hover:shadow-neo-hover active:shadow-neo-sm transition-all disabled:bg-muted disabled:shadow-none disabled:text-muted-foreground disabled:cursor-not-allowed overflow-hidden",
+                                        isLoading ? "bg-primary text-primary-foreground"  : "bg-accent text-accent-foreground hover:bg-accent/90"
                                     )}>
-                                {isLoading ? <Loader2 className="animate-spin" /> : 'Lanjutkan'}
+                                {isLoading ? <Loader2 className="animate-spin" />  : <span className="overflow-hidden text-ellipsis">Lanjutkan</span>}
                                 </Button>
                             </div>
                         </form>

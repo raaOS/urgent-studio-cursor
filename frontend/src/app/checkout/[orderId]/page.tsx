@@ -4,11 +4,11 @@
 // The checkout logic has been moved to /checkout/summary/page.tsx to handle multiple order IDs via searchParams.
 // This prevents conflicts with Next.js dynamic routing and provides a clearer URL structure for the user.
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-export default function DeprecatedCheckoutPage() {
+export default function DeprecatedCheckoutPage(): JSX.Element {
   const router = useRouter();
 
   useEffect(() => {

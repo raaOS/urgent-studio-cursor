@@ -37,9 +37,9 @@ export const BriefSchema = z.object({
   productName: z.string(),
   tier: z.string(),
   briefDetails: z.string().min(10, { message: "Brief harus diisi minimal 10 karakter." }),
-  googleDriveAssetLinks: z.string().url({ message: "URL Google Drive tidak valid." }).optional().or(z.literal('')),
-  width: z.number({invalid_type_error: 'Wajib diisi angka'}).positive().optional().or(z.literal('')),
-  height: z.number({invalid_type_error: 'Wajib diisi angka'}).positive().optional().or(z.literal('')),
+  googleDriveAssetLinks: z.string().url({ message: "URL Google Drive tidak valid." }).optional(),
+  width: z.union([z.number(), z.literal('')]).optional(),
+  height: z.union([z.number(), z.literal('')]).optional(),
   unit: z.string().optional(),
 });
 

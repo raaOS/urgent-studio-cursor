@@ -1,19 +1,21 @@
 
-import { CheckoutClientPage } from "@/components/CheckoutClientPage";
 import { Suspense } from "react";
+
+import CheckoutClientPage from "@/components/CheckoutClientPage";
 
 // Define the type for searchParams directly in the page component.
 // This is the standard and safest way for Next.js 14 App Router.
 interface CheckoutSummaryPageProps {
-  searchParams?: {
+  searchParams?: Promise<{
     orderIds?: string;
-  };
+  }>;
 }
 
-export default function CheckoutSummaryPage({ searchParams }: CheckoutSummaryPageProps) {
-  const orderIdsParam = searchParams?.orderIds || "";
+export default async function CheckoutSummaryPage({ searchParams }: CheckoutSummaryPageProps): Promise<JSX.Element> {
+  const resolvedSearchParams = await (searchParams ?? Promise.resolve({ orderIds: undefined }));
+  const orderIdsParam = resolvedSearchParams?.orderIds ?? "";
 
-  if (!orderIdsParam) {
+  if (!orderIdsParam || orderIdsParam === "") {
     return (
       <div className="flex min-h-screen w-full items-center justify-center p-4 text-center">
         <div className="max-w-md">

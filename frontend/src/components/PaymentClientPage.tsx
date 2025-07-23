@@ -1,212 +1,240 @@
 
-"use client";
+'use client';
 
-import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getOrderById, confirmPayment } from '@/services/orderService';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { useEffect, useState } from 'react';
+
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Loader2, ExternalLink, Info, ShieldCheck } from 'lucide-react';
-import Link from 'next/link';
-import { cn } from '@/lib/utils';
-import type { Order } from '@/lib/types';
-import { useToast } from '@/hooks/use-toast';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-export function PaymentClientPage({ orderIds }: { orderIds: string[] }) {
-  const router = useRouter();
-  const { toast } = useToast();
+// Interfaces
+interface OrderData {
+  id: string;
+  totalAmount: number;
+  status: string;
+  customerInfo: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+  items: Array<{
+    id: string;
+    name: string;
+    tier: string;
+    price: number;
+    quantity: number;
+  }>;
+  briefs: Array<{
+    id: string;
+    details: string;
+    width: number;
+    height: number;
+    unit: string;
+    driveLink: string;
+  }>;
+  createdAt: string;
+}
+
+interface BankDetails {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+}
+
+// Constants
+const BANK_DETAILS: BankDetails = {
+  bankName: 'Bank BCA',
+  accountNumber: '1234567890',
+  accountName: 'Urgent Studio'
+} as const;
+
+const CURRENCY_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
+  style: 'currency',
+  currency: 'IDR',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0
+} as const;
+
+// Helper functions
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('id-ID', CURRENCY_FORMAT_OPTIONS).format(amount);
+}
+
+function isValidOrderData(data: unknown): data is OrderData {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
   
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isConfirming, setIsConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const order = data as Record<string, unknown>;
+  return (
+    typeof order.id === 'string' &&
+    typeof order.totalAmount === 'number' &&
+    typeof order.status === 'string' &&
+    typeof order.customerInfo === 'object' &&
+    order.customerInfo !== null &&
+    Array.isArray(order.items) &&
+    Array.isArray(order.briefs) &&
+    typeof order.createdAt === 'string'
+  );
+}
 
-  const bankDetails = {
-    name: "PT URGENT STUDIO KREATIF",
-    accountNumber: "1234567890",
-    bank: "BCA"
-  };
+function parseOrderFromStorage(orderId: string): OrderData | null {
+  try {
+    const orderData = sessionStorage.getItem(`order_${orderId}`);
+    if (!orderData) {
+      return null;
+    }
+    
+    const parsedData: unknown = JSON.parse(orderData);
+    return isValidOrderData(parsedData) ? parsedData : null;
+  } catch (error) {
+    console.error('Failed to parse order from session storage:', error);
+    return null;
+  }
+}
 
-  useEffect(() => {
-    if (orderIds && orderIds.length > 0) {
-      const fetchOrders = async () => {
-        try {
-          const fetchedOrders = await Promise.all(
-            orderIds.map(id => getOrderById(id))
-          );
-          
-          const validOrders = fetchedOrders.filter((order): order is Order => order !== null);
-          
-          if (validOrders.length === 0) {
-            setError("Pesanan tidak ditemukan.");
-          } else {
-            // Cek apakah ada pesanan yang statusnya tidak lagi 'Menunggu Pembayaran'
-            const alreadyProcessed = validOrders.some(o => o.status !== 'Menunggu Pembayaran');
-            if (alreadyProcessed) {
-                setError("Pesanan ini sudah diproses. Anda akan diarahkan ke halaman pelacakan.");
-                setTimeout(() => {
-                    router.push(`/track?orderId=${orderIds[0]}`);
-                }, 3000);
-            } else {
-                setOrders(validOrders);
-            }
-          }
-        } catch (err) {
-          setError("Gagal memuat data pesanan.");
-        } finally {
+function calculateTotalAmount(order: OrderData): number {
+  return order.items.reduce((total, item) => total + (item.price * item.quantity), 0);
+}
+
+// Component
+export default function PaymentClientPage({ params }: { params: { orderId: string } }): JSX.Element {
+  const [order, setOrder] = useState<OrderData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+  const router = useRouter();
+  
+  useEffect((): void => {
+    const fetchOrderData = (): void => {
+      try {
+        const orderData = parseOrderFromStorage(params.orderId);
+        
+        if (!orderData) {
+          setError('Data pesanan tidak ditemukan');
           setLoading(false);
+          return;
         }
-      };
-      fetchOrders();
-    } else {
-        setError("ID Pesanan tidak ditemukan di URL.");
+        
+        setOrder(orderData);
+        setError('');
+      } catch (err) {
+        console.error('Error fetching order data:', err);
+        setError('Terjadi kesalahan saat mengambil data pesanan');
+      } finally {
         setLoading(false);
+      }
+    };
+    
+    fetchOrderData();
+  }, [params.orderId]);
+  
+  const handlePaymentConfirmation = (): void => {
+    if (!order) {
+      return;
     }
-  }, [orderIds, router]);
-
-  const handlePaymentConfirmation = async () => {
-    setIsConfirming(true);
+    
+    // Update order status to 'payment_confirmed'
+    const updatedOrder: OrderData = {
+      ...order,
+      status: 'payment_confirmed'
+    };
+    
     try {
-        await confirmPayment(orderIds);
-        toast({
-            title: "Konfirmasi Terkirim!",
-            description: "Tim kami akan segera memverifikasi pembayaran Anda. Status pesanan telah diperbarui.",
-        });
-        router.push(`/track?orderId=${orderIds[0]}`);
-    } catch(e) {
-        console.error("Gagal mengonfirmasi pembayaran:", e);
-        toast({
-            variant: "destructive",
-            title: "Konfirmasi Gagal",
-            description: "Terjadi kesalahan. Silakan coba lagi atau hubungi bantuan.",
-        });
-        setIsConfirming(false);
+      sessionStorage.setItem(`order_${order.id}`, JSON.stringify(updatedOrder));
+      
+      // Clear cart after payment confirmation
+      sessionStorage.removeItem('globalCart');
+      sessionStorage.removeItem('globalBriefs');
+      
+      // Dispatch event to update cart count
+      window.dispatchEvent(new Event('cartUpdated'));
+      
+      // Redirect to success page
+      void router.push(`/payment/${order.id}/success`);
+    } catch (err) {
+      console.error('Error confirming payment:', err);
+      setError('Terjadi kesalahan saat mengkonfirmasi pembayaran');
     }
   };
-
-  const totalAmount = orders.reduce((acc, order) => acc + order.totalAmount, 0);
-
+  
   if (loading) {
     return (
-      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Memuat instruksi pembayaran...</p>
-      </div>
-    );
-  }
-
-  if (error || orders.length === 0) {
-    return (
-      <div className="flex min-h-screen w-full flex-col bg-background">
-        <header className="bg-background border-b-2 border-foreground">
-            <div className="container flex h-16 items-center justify-end" />
-        </header>
-        <main className="flex-1 flex items-center justify-center p-4">
-          <Card className="max-w-md mx-auto w-full border-2 border-foreground shadow-neo">
-            <CardHeader className="text-center">
-              <CardTitle className="text-2xl">Terjadi Kesalahan</CardTitle>
-              <CardDescription>{error || "Pesanan tidak dapat ditampilkan."}</CardDescription>
-            </CardHeader>
-             <CardFooter>
-              <Button asChild className="w-full font-bold">
-                <Link href="/">
-                    Kembali ke Beranda
-                </Link>
-              </Button>
-            </CardFooter>
-          </Card>
-        </main>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-screen w-full flex-col bg-muted/40">
-        <header className="bg-background border-b-2 border-foreground">
-            <div className="container flex h-16 items-center justify-end" />
-        </header>
-      <main className="flex-1 py-16 sm:py-24">
-        <div className="container mx-auto max-w-xl px-4">
-          <Card className="border-2 border-foreground shadow-neo">
-            <CardHeader className="text-center">
-              <CardTitle className="text-3xl font-bold tracking-tighter">Selesaikan Pembayaran</CardTitle>
-              <CardDescription className="text-sm mt-2">
-                Silakan transfer sejumlah total pembayaran ke rekening berikut.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6">
-                <div className="rounded-lg border-2 border-dashed border-foreground p-4 text-center">
-                    <p className="text-sm font-medium text-muted-foreground">TOTAL PEMBAYARAN</p>
-                    <div className="flex items-center justify-center gap-2">
-                        <p className="text-3xl font-bold text-primary tracking-tight">Rp {totalAmount.toLocaleString('id-ID')}</p>
-                    </div>
-                     <p className="text-xs text-muted-foreground mt-1">
-                        Jumlah ini adalah total dari {orders.length} pesanan Anda.
-                    </p>
-                </div>
-                
-                <div className="bg-muted p-3 rounded-lg flex items-start gap-3 text-sm">
-                    <Info className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                    <p className="text-muted-foreground">Pastikan Anda mentransfer **dengan nominal yang sama persis** agar pembayaran Anda dapat diverifikasi secara otomatis oleh sistem kami.</p>
-                </div>
-
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                        <Label className="text-base">Bank</Label>
-                        <p className="font-bold text-lg">{bankDetails.bank}</p>
-                    </div>
-                     <div className="flex justify-between items-center">
-                        <Label className="text-base">Nama Penerima</Label>
-                        <p className="font-bold text-lg">{bankDetails.name}</p>
-                    </div>
-                    <div className="flex justify-between items-center">
-                        <Label className="text-base">Nomor Rekening</Label>
-                        <div className="flex items-center gap-2">
-                           <p className="font-bold text-lg">{bankDetails.accountNumber}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <Separator />
-
-                <div className="text-center space-y-2">
-                    <h3 className="font-semibold">Perlu Bantuan?</h3>
-                    <p className="text-sm text-muted-foreground">
-                        Jika Anda sudah transfer namun status belum berubah dalam 1x24 jam, silakan hubungi kami via Telegram.
-                    </p>
-                    <Button asChild className="w-full sm:w-auto font-bold border-2 border-foreground bg-[#2AABEE] text-white hover:bg-[#259cd1] shadow-neo-sm">
-                        <a href="https://t.me/your_telegram_bot" target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="mr-2"/>
-                            Hubungi Bantuan
-                        </a>
-                    </Button>
-                </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-3 p-6">
-                <Button 
-                    onClick={handlePaymentConfirmation}
-                    disabled={isConfirming}
-                    className={cn(
-                        "w-full h-12 text-base font-bold border-2 border-foreground hover:shadow-neo-hover active:shadow-neo-sm transition-all disabled:bg-muted disabled:shadow-none disabled:text-muted-foreground disabled:cursor-not-allowed",
-                        "bg-accent text-accent-foreground hover:bg-accent/90"
-                    )}>
-                    {isConfirming ? (
-                        <>
-                            <Loader2 className="animate-spin mr-2"/>
-                            Mengonfirmasi...
-                        </>
-                    ) : (
-                         <>
-                            <ShieldCheck className="mr-2"/>
-                            Saya Sudah Transfer, Konfirmasi Sekarang
-                         </>
-                    )}
-                </Button>
-            </CardFooter>
-          </Card>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-center items-center min-h-[400px]">
+          <div className="text-lg">Memuat data pesanan...</div>
         </div>
-      </main>
+      </div>
+    );
+  }
+  
+  if (error || !order) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card className="max-w-md mx-auto">
+          <CardHeader>
+            <CardTitle className="text-red-600">Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-gray-600">{error || 'Data pesanan tidak ditemukan'}</p>
+            <Button 
+              onClick={(): void => void router.push('/')} 
+              className="mt-4 w-full"
+            >
+              Kembali ke Beranda
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  const totalAmount = calculateTotalAmount(order);
+  
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle>Instruksi Pembayaran</CardTitle>
+          <CardDescription>
+            Pesanan ID: {order.id}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h3 className="font-semibold text-blue-900 mb-2">Detail Bank</h3>
+            <div className="space-y-1 text-blue-800">
+              <p><strong>Bank:</strong> {BANK_DETAILS.bankName}</p>
+              <p><strong>No. Rekening:</strong> {BANK_DETAILS.accountNumber}</p>
+              <p><strong>Atas Nama:</strong> {BANK_DETAILS.accountName}</p>
+            </div>
+          </div>
+          
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h3 className="font-semibold text-green-900 mb-2">Total Pembayaran</h3>
+            <p className="text-2xl font-bold text-green-800">
+              {formatCurrency(totalAmount)}
+            </p>
+          </div>
+          
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h3 className="font-semibold text-yellow-900 mb-2">Informasi Penting</h3>
+            <ul className="list-disc list-inside space-y-1 text-yellow-800 text-sm">
+              <li>Transfer sesuai dengan nominal yang tertera</li>
+              <li>Simpan bukti transfer untuk konfirmasi</li>
+              <li>Setelah transfer, klik tombol konfirmasi di bawah</li>
+              <li>Tim kami akan memverifikasi pembayaran dalam 1x24 jam</li>
+            </ul>
+          </div>
+          
+          <Button 
+            onClick={handlePaymentConfirmation}
+            className="w-full bg-[#ff7a2f] hover:bg-[#e66a2a] text-white"
+            size="lg"
+          >
+            Konfirmasi Pembayaran
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

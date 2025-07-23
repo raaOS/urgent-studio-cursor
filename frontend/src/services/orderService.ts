@@ -1,328 +1,627 @@
+'use client';
 
-'use server';
+import {
+  NotFoundException,
+  ValidationException,
+  AppException,
+} from '@/lib/exceptions';
+import {
+  Order,
+  Product,
+  OrderSchema,
+  OrderStatusEnum,
+  Brief,
+} from '@/lib/types';
 
-import { Brief, Order, Product, OrderSchema, OrderStatusEnum } from "@/lib/types"; // Import tipe dari pusat
-import { InternalServerException, NotFoundException, ValidationException } from "@/lib/exceptions";
-import { sendTelegramNotification } from "./notificationService";
-import { getBotSettings } from "./botSettingsService";
-import { LogContext } from "./logService";
+import { backendService } from './backendservice';
+import { handleServiceError, tryCatch } from './errorHandler';
+import { CreateOrderSchema } from './validationSchemas';
 
-
-/**
- * Creates the data object for a new payment confirmation.
- * This is an internal helper function.
- * @param orders - The list of orders being confirmed.
- * @param totalAmount - The total payment amount.
- * @returns The data object for the template.
- */
-function createPaymentConfirmationMessageData(orders: Order[], totalAmount: number): Record<string, any> {
-    if (!orders.length) return {};
-    const customer = orders[0]; // Assume same customer for all orders in this batch
-    
-    return {
-      customerName: customer.customerName || 'N/A',
-      customerTelegram: customer.customerTelegram?.replace('@', '') || 'N/A',
-      totalAmount: totalAmount.toLocaleString('id-ID'),
-      orderCount: orders.length,
-      orderIds: orders.map(o => o.id),
-    };
+// Types
+interface BackendOrder {
+  id: string;
+  tier?: string;
+  briefs?: Brief[];
+  status: string;
+  createdAt: string;
+  updatedAt?: string;
+  subtotal?: number;
+  handlingFee?: number;
+  uniqueCode?: number;
+  totalAmount: number;
+  statusHistory?: Record<string, string>;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  customerTelegram?: string;
+  customerAddress?: string;
 }
 
+interface CustomerData {
+  name: string;
+  phone: string;
+  telegram: string;
+}
 
-const toPlainOrderObject = async (docId: string, data: any): Promise<Order> => {
-    // Fetch briefs from subcollection
-    const briefsData: Brief[] = [];
-    // const briefsSnapshot = await getDocs(collection(db, "orders", docId, "briefs")); // Removed Firestore call
-    // briefsSnapshot.forEach((briefDoc) => {
-    //     briefsData.push(briefDoc.data() as Brief);
-    // });
+interface BriefData {
+  tier: string;
+  instanceId: string;
+  productId: string;
+  productName: string;
+  briefDetails: string;
+  height?: number | string;
+  width?: number | string;
+  googleDriveAssetLinks?: string;
+  unit?: string;
+}
 
-    const plainData = {
-        id: docId,
-        ...data,
-        briefs: briefsData,
-        createdAt: data.createdAt instanceof Date ? data.createdAt.toISOString() : new Date().toISOString(),
-        updatedAt: data.updatedAt instanceof Date ? data.updatedAt.toISOString() : undefined,
-    };
-    
-    // Konversi statusHistory jika ada
-    if (plainData.statusHistory) {
-        for (const key in plainData.statusHistory) {
-            if (plainData.statusHistory[key] instanceof Date) {
-                plainData.statusHistory[key] = plainData.statusHistory[key].toISOString();
-            }
-        }
-    } else {
-        plainData.statusHistory = {};
-    }
+interface CreateOrderData {
+  customerName: string;
+  customerEmail: string;
+  status: string;
+  totalAmount: number;
+  subtotal: number;
+  handlingFee: number;
+  uniqueCode: number;
+  tier: string;
+  briefs: BriefData[];
+}
 
-    // Validasi dengan Zod sebelum mengembalikan
-    const validation = OrderSchema.safeParse(plainData);
-    if (!validation.success) {
-        console.error("Data Firestore tidak valid untuk Order:", validation.error.flatten());
-        throw new InternalServerException("Data pesanan di server tidak valid.", { orderId: docId, errors: validation.error.flatten() });
-    }
+// Constants
+const DEFAULT_TIER = 'standard';
+const DEFAULT_HANDLING_FEE = 2500;
+const UNIQUE_CODE_MIN = 100;
+const UNIQUE_CODE_MAX = 999;
+const MIN_BRIEF_DETAILS_LENGTH = 10;
+const DEFAULT_BRIEF_DETAILS = 'Deskripsi cukup panjang';
 
-    return validation.data;
+/**
+ * Validates required fields for BackendOrder
+ */
+const validateBackendOrder = (backendOrder: BackendOrder): void => {
+  if (!backendOrder?.id || backendOrder.id === '') {
+    throw new ValidationException('Data pesanan dari backend tidak lengkap', {
+      backendOrder,
+    });
+  }
 };
 
 /**
- * Creates multiple orders from a single cart, splitting them by service tier.
- * @param {Product[]} cart - The global cart containing all items.
- * @returns {Promise<string[]>} A list of the new order IDs.
+ * Creates default status history if not provided
  */
-export async function createMultipleOrdersFromCart(cart: Product[]): Promise<string[]> {
-    if (!cart || cart.length === 0) {
-        throw new ValidationException("Keranjang tidak boleh kosong.", { cart });
-    }
-
-    // const batch = writeBatch(db); // Removed Firestore batch
-    const orderIds: string[] = [];
-
-    const cartByTier = cart.reduce((acc, item) => {
-        if (!acc[item.tier]) {
-            acc[item.tier] = [];
-        }
-        acc[item.tier].push(item);
-        return acc;
-    }, {} as Record<string, Product[]>);
-
-    for (const tier in cartByTier) {
-        const itemsInTier = cartByTier[tier];
-        const createdAt = new Date(); // Use Date object
-        
-        const subtotal = itemsInTier.reduce((sum, item) => sum + (item.promoPrice || item.price), 0);
-        const handlingFee = 2500;
-        const uniqueCode = Math.floor(Math.random() * 900) + 100;
-        const totalAmount = subtotal + handlingFee + uniqueCode;
-
-        const orderId = `order-${Math.random().toString(36).substring(7)}`; // Generate a dummy ID
-        orderIds.push(orderId);
-
-        // batch.set(orderRef, { // Removed Firestore batch set
-        //     tier: tier,
-        //     subtotal,
-        //     handlingFee,
-        //     uniqueCode,
-        //     totalAmount,
-        //     status: "Menunggu Pembayaran",
-        //     createdAt: createdAt,
-        //     updatedAt: createdAt,
-        //     statusHistory: { "Menunggu Pembayaran": createdAt },
-        //     customerName: '',
-        //     customerPhone: '',
-        //     customerTelegram: '',
-        // });
-
-        itemsInTier.forEach(item => {
-            const briefId = `brief-${Math.random().toString(36).substring(7)}`; // Generate a dummy ID
-            const briefData: Brief = {
-                instanceId: item.instanceId || briefId,
-                productId: item.id,
-                productName: item.name,
-                briefDetails: item.briefDetails || '',
-                googleDriveAssetLinks: item.googleDriveAssetLinks || '',
-                tier: item.tier,
-                width: item.width || '',
-                height: item.height || '',
-                unit: item.unit || 'px'
-            };
-            // batch.set(briefRef, briefData); // Removed Firestore batch set
-        });
-    }
-
-    // try { // Removed Firestore try-catch
-    //     await batch.commit();
-    //     return orderIds;
-    // } catch (error: any) {
-    //     throw new InternalServerException("Gagal menyimpan pesanan ke database.", { originalError: error.message });
-    // }
-    return orderIds; // Return dummy IDs
-}
-
-export async function getOrderById(orderId: string): Promise<Order | null> {
-    try {
-        // const docRef = doc(db, "orders", orderId); // Removed Firestore doc
-        // const docSnap = await getDoc(docRef);
-
-        // if (docSnap.exists()) {
-            // return await toPlainOrderObject(docSnap.id, docSnap.data());
-        // } else {
-            return null; // Return null for dummy data
-        // }
-    } catch (error: any) {
-        console.error("Error fetching document by ID:", error);
-        throw new InternalServerException("Gagal mengambil data pesanan.", { orderId, originalError: error.message });
-    }
-}
-
-// Semua fungsi order dinonaktifkan karena Firestore dihapus
-export async function getOrdersDummy() {
-  // Contoh data dummy sesuai tipe Order
-  const dummyBrief: Brief = {
-    instanceId: "dummy-1",
-    productId: "prod-1",
-    productName: "Produk Dummy",
-    tier: "basic",
-    briefDetails: "Contoh brief minimal 10 karakter.",
-    googleDriveAssetLinks: "",
-    width: "",
-    height: "",
-    unit: "px"
-  };
-  return [
-    {
-      id: '1',
-      tier: 'basic',
-      briefs: [dummyBrief],
-      status: OrderStatusEnum.enum["Menunggu Pembayaran"],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      subtotal: 100000,
-      handlingFee: 0,
-      uniqueCode: 123,
-      totalAmount: 100123,
-      statusHistory: { 'Menunggu Pembayaran': new Date().toISOString() },
-      customerName: 'Budi',
-      customerPhone: '08123456789',
-      customerTelegram: '@budi',
-    },
-    {
-      id: '2',
-      tier: 'premium',
-      briefs: [dummyBrief],
-      status: OrderStatusEnum.enum["Pesanan Selesai"],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      subtotal: 200000,
-      handlingFee: 0,
-      uniqueCode: 456,
-      totalAmount: 200456,
-      statusHistory: { 'Pesanan Selesai': new Date().toISOString() },
-      customerName: 'Siti',
-      customerPhone: '08987654321',
-      customerTelegram: '@siti',
-    },
-  ];
-}
-
-export async function updateOrderWithCustomerInfo(orderId: string, customerData: { name: string; phone: string; telegram: string; }): Promise<void> {
-    if (!orderId) {
-        throw new ValidationException("ID Pesanan wajib diisi.");
-    }
-    if (!customerData.name || !customerData.phone || !customerData.telegram) {
-        throw new ValidationException("Nama, telepon, dan telegram wajib diisi.", { customerData });
-    }
-
-    // const orderRef = doc(db, "orders", orderId); // Removed Firestore doc
-    
-    // const batch = writeBatch(db); // Removed Firestore batch
-    // batch.update(orderRef, { // Removed Firestore batch update
-    //     customerName: customerData.name,
-    //     customerPhone: customerData.phone,
-    //     customerTelegram: customerData.telegram,
-    //     updatedAt: serverTimestamp(),
-    // });
-
-    // try { // Removed Firestore try-catch
-    //     await batch.commit();
-    // } catch(error: any) {
-    //     if (error.code === 'not-found') {
-    //          throw new NotFoundException(`Pesanan dengan ID ${orderId} tidak ditemukan.`, { orderId });
-    //     }
-    //     throw new InternalServerException("Gagal memperbarui info pelanggan.", { orderId, originalError: error.message });
-    // }
-}
-
-export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
-    const validatedStatus = OrderStatusEnum.safeParse(status);
-    if (!orderId || !validatedStatus.success) {
-        throw new ValidationException("ID Pesanan dan status baru yang valid wajib diisi.");
-    }
-
-    // const orderRef = doc(db, "orders", orderId); // Removed Firestore doc
-    // const statusHistoryField = `statusHistory.${status}`; // Removed Firestore field
-    // const batch = writeBatch(db); // Removed Firestore batch
-
-    // batch.update(orderRef, { // Removed Firestore batch update
-    //     status: status,
-    //     updatedAt: serverTimestamp(),
-    //     [statusHistoryField]: serverTimestamp()
-    // });
-
-    // try { // Removed Firestore try-catch
-    //     await batch.commit();
-    // } catch(error: any) {
-    //     if (error.code === 'not-found') {
-    //         throw new NotFoundException(`Pesanan dengan ID ${orderId} tidak ditemukan.`, { orderId });
-    //    }
-    //    throw new InternalServerException("Gagal memperbarui status pesanan.", { orderId, status, originalError: error.message });
-    // }
-}
-
+const createDefaultStatusHistory = (
+  status: string,
+  createdAt: string,
+  existingHistory?: Record<string, string>,
+): Record<string, string> => {
+  return existingHistory ?? { [status]: createdAt };
+};
 
 /**
- * Confirms payment for a list of order IDs, changing their status and notifying the admin.
- * @param orderIds The IDs of the orders to confirm.
+ * Safely converts nullable/undefined string to empty string
  */
-export async function confirmPayment(orderIds: string[]): Promise<void> {
-    if (!orderIds || orderIds.length === 0) {
-        throw new ValidationException("Daftar ID Pesanan tidak boleh kosong.");
+const safeStringValue = (value: string | null | undefined): string => {
+  return value !== null && value !== undefined && value !== '' ? value : '';
+};
+
+/**
+ * Type guard to check if value is a valid object
+ */
+const isValidObject = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null;
+};
+
+/**
+ * Type guard to check if value is a string
+ */
+const isString = (value: unknown): value is string => {
+  return typeof value === 'string';
+};
+
+/**
+ * Type guard to check if value is a number
+ */
+const isNumber = (value: unknown): value is number => {
+  return typeof value === 'number';
+};
+
+/**
+ * Converts backend order data to validated Order object
+ */
+const convertBackendOrderToOrder = (backendOrder: BackendOrder): Order => {
+  validateBackendOrder(backendOrder);
+
+  const plainData = {
+    id: backendOrder.id,
+    tier: safeStringValue(backendOrder.tier) || DEFAULT_TIER,
+    briefs: backendOrder.briefs ?? [],
+    status: backendOrder.status,
+    createdAt: backendOrder.createdAt,
+    updatedAt: backendOrder.updatedAt,
+    subtotal: backendOrder.subtotal ?? backendOrder.totalAmount,
+    handlingFee: backendOrder.handlingFee ?? 0,
+    uniqueCode: backendOrder.uniqueCode ?? 0,
+    totalAmount: backendOrder.totalAmount,
+    statusHistory: createDefaultStatusHistory(
+      backendOrder.status,
+      backendOrder.createdAt,
+      backendOrder.statusHistory,
+    ),
+    customerName: backendOrder.customerName,
+    customerEmail: backendOrder.customerEmail,
+    customerPhone: safeStringValue(backendOrder.customerPhone),
+    customerTelegram: safeStringValue(backendOrder.customerTelegram),
+    customerAddress: backendOrder.customerAddress ?? '',
+  };
+
+  const validation = OrderSchema.safeParse(plainData);
+  if (!validation.success) {
+    console.error(
+      'Data backend tidak valid untuk Order:',
+      validation.error.flatten(),
+    );
+    throw new ValidationException('Data pesanan dari backend tidak valid', {
+      orderId: backendOrder.id,
+      errors: validation.error.flatten(),
+    });
+  }
+
+  return validation.data;
+};
+
+/**
+ * Validates cart item fields
+ */
+const validateCartItem = (item: Product): void => {
+  const requiredFields: Array<keyof Product> = ['id', 'name', 'price', 'tier'];
+  const missingFields = requiredFields.filter(
+    field => {
+      const value = item[field];
+      return !value || value === '';
+    }
+  );
+
+  if (missingFields.length > 0) {
+    throw new ValidationException('Item di keranjang tidak valid', {
+      item,
+      missingFields,
+    });
+  }
+};
+
+/**
+ * Groups cart items by tier
+ */
+const groupCartByTier = (cart: Product[]): Record<string, Product[]> => {
+  return cart.reduce((acc: Record<string, Product[]>, item: Product) => {
+    if (!acc[item.tier]) {
+      acc[item.tier] = [];
+    }
+    acc[item.tier]!.push(item);
+    return acc;
+  }, {});
+};
+
+/**
+ * Calculates subtotal for items
+ */
+const calculateSubtotal = (items: Product[]): number => {
+  return items.reduce(
+    (sum: number, item: Product) => sum + (item.promoPrice ?? item.price),
+    0,
+  );
+};
+
+/**
+ * Generates random unique code
+ */
+const generateUniqueCode = (): number => {
+  return Math.floor(Math.random() * (UNIQUE_CODE_MAX - UNIQUE_CODE_MIN + 1)) + UNIQUE_CODE_MIN;
+};
+
+/**
+ * Creates brief object from product
+ */
+const createBriefFromProduct = (item: Product): BriefData => {
+  const briefData: BriefData = {
+    instanceId: item.instanceId && item.instanceId !== '' 
+      ? item.instanceId 
+      : `${item.id}-${Date.now()}`,
+    productId: item.id,
+    productName: item.name,
+    tier: item.tier,
+    briefDetails: isString(item.briefDetails) && 
+      item.briefDetails.length >= MIN_BRIEF_DETAILS_LENGTH
+      ? item.briefDetails 
+      : DEFAULT_BRIEF_DETAILS,
+  };
+
+  // Add optional properties only if they have valid values
+  if (isString(item.googleDriveAssetLinks) && item.googleDriveAssetLinks !== '') {
+    briefData.googleDriveAssetLinks = item.googleDriveAssetLinks;
+  }
+  
+  if (isNumber(item.width) || item.width === '') {
+    briefData.width = item.width;
+  }
+  
+  if (isNumber(item.height) || item.height === '') {
+    briefData.height = item.height;
+  }
+  
+  if (isString(item.unit) && item.unit !== '') {
+    briefData.unit = item.unit;
+  }
+
+  return briefData;
+};
+
+/**
+ * Validates and normalizes brief data
+ */
+const validateAndNormalizeBrief = (brief: unknown): BriefData => {
+  if (isValidObject(brief)) {
+    const briefData: BriefData = {
+      tier: isString(brief.tier) ? brief.tier : '',
+      instanceId: isString(brief.instanceId) ? brief.instanceId : '',
+      productId: isString(brief.productId) ? brief.productId : '',
+      productName: isString(brief.productName) ? brief.productName : '',
+      briefDetails: isString(brief.briefDetails) ? brief.briefDetails : '',
+    };
+
+    // Add optional properties only if they have valid values
+    if (isNumber(brief.height) || brief.height === '') {
+      briefData.height = brief.height;
+    }
+    
+    if (isNumber(brief.width) || brief.width === '') {
+      briefData.width = brief.width;
+    }
+    
+    if (isString(brief.googleDriveAssetLinks)) {
+      briefData.googleDriveAssetLinks = brief.googleDriveAssetLinks;
+    }
+    
+    if (isString(brief.unit)) {
+      briefData.unit = brief.unit;
     }
 
-    // const batch = writeBatch(db); // Removed Firestore batch
-    const newStatus = "Pembayaran Sedang Diverifikasi";
-    // const statusHistoryField = `statusHistory.${newStatus}`; // Removed Firestore field
-    const timestamp = new Date(); // Use Date object
+    return briefData;
+  }
+  
+  return {
+    tier: '',
+    instanceId: '',
+    productId: '',
+    productName: '',
+    briefDetails: '',
+  };
+};
 
-    // Fetch order details to include in the notification
-    const orders = await Promise.all(
-      orderIds.map(id => getOrderById(id).then(order => {
-        if (!order) throw new NotFoundException(`Pesanan dengan ID ${id} tidak ditemukan saat konfirmasi.`);
-        return order;
-      }))
+/**
+ * Validates customer data
+ */
+const validateCustomerData = (customerData: CustomerData): void => {
+  const { name, phone, telegram } = customerData;
+  
+  if (!name || !phone || !telegram) {
+    throw new ValidationException(
+      'Nama, telepon, dan telegram wajib diisi.',
+      { customerData },
     );
+  }
+};
 
-    const totalAmount = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+/**
+ * Creates multiple orders from cart, splitting by service tier
+ */
+export const createMultipleOrdersFromCart = async (
+  cart: Product[],
+): Promise<string[]> => {
+  return tryCatch<string[], never>(
+    async (): Promise<string[]> => {
+      // Validate input
+      if (!cart || cart.length === 0) {
+        throw new ValidationException('Keranjang tidak boleh kosong', { cart });
+      }
 
-    // Update Firestore documents
-    orderIds.forEach(orderId => {
-        // const orderRef = doc(db, "orders", orderId); // Removed Firestore doc
-        // batch.update(orderRef, { // Removed Firestore batch update
-        //     status: newStatus,
-        //     updatedAt: timestamp,
-        //     [statusHistoryField]: timestamp
-        // });
-    });
+      // Validate each cart item
+      cart.forEach(validateCartItem);
 
-    try {
-        // Get bot settings to check if notification is enabled
-        const botSettings = await getBotSettings();
+      const orderIds: string[] = [];
+      const cartByTier = groupCartByTier(cart);
 
-        // Commit changes to database first
-        // await batch.commit(); // Removed Firestore commit
+      for (const [tier, itemsInTier] of Object.entries(cartByTier)) {
+        if (!itemsInTier || itemsInTier.length === 0) {continue;}
 
-        // If notification for this event is enabled, send it.
-        if (botSettings.notifyOnPaymentConfirmation) {
-            const notificationData = createPaymentConfirmationMessageData(orders, totalAmount);
-            const logContext: LogContext = {
-                eventType: "Konfirmasi Pembayaran",
-                orderIds: orderIds,
-                // Do not override chatId here, let the notification service use the admin default
-            };
-            // This now uses the re-exported function from notificationService
-            await sendTelegramNotification(botSettings.templatePaymentConfirmation, notificationData, logContext);
+        const subtotal = calculateSubtotal(itemsInTier);
+        const handlingFee = DEFAULT_HANDLING_FEE;
+        const uniqueCode = generateUniqueCode();
+        const totalAmount = subtotal + handlingFee + uniqueCode;
+
+        const orderData: CreateOrderData = {
+          customerName: '',
+          customerEmail: '',
+          status: 'Menunggu Pembayaran',
+          totalAmount,
+          subtotal,
+          handlingFee,
+          uniqueCode,
+          tier,
+          briefs: itemsInTier.map(createBriefFromProduct),
+        };
+
+        const parsedOrderData = CreateOrderSchema.parse(orderData);
+        const response = await backendService.createOrder(parsedOrderData);
+
+        if (!response.success || !response.data) {
+          throw new ValidationException(
+            response.error || 'Gagal membuat pesanan',
+            { response },
+          );
         }
 
-    } catch (error: any) {
-         if (error instanceof NotFoundException) {
-            throw error; // Re-throw not found exception
-         }
-        // If notification fails, we don't roll back the DB change.
-        // The error is already logged by notificationService.
-        // We re-throw it so the client knows something went wrong with the notification part.
-        throw new InternalServerException("Status pesanan diperbarui, tapi notifikasi Telegram gagal dikirim. Periksa Log Notifikasi untuk detailnya.");
-    }
-}
+        orderIds.push(response.data.id);
+      }
 
-    
+      return orderIds;
+    },
+    (error): never => {
+      throw handleServiceError(error, 'Gagal menyimpan pesanan ke backend');
+    },
+  );
+};
+
+/**
+ * Gets order by ID
+ */
+export const getOrderById = async (orderId: string): Promise<Order | null> => {
+  return tryCatch<Order | null, never>(
+    async (): Promise<Order | null> => {
+      const response = await backendService.getOrderById(orderId);
+      
+      if (!response.success || !response.data) {
+        return null;
+      }
+
+      const orderData = response.data;
+
+      // Validate and normalize briefs if present
+      if (Array.isArray(orderData.briefs)) {
+        orderData.briefs = orderData.briefs.map(validateAndNormalizeBrief);
+      }
+
+      // Type assertion with validation
+      if (!isValidObject(orderData)) {
+        throw new ValidationException('Data pesanan tidak valid dari backend');
+      }
+
+      const orderDataTyped = orderData as Record<string, unknown>;
+        
+        const backendOrder: BackendOrder = {
+          id: isString(orderDataTyped.id) ? orderDataTyped.id : '',
+          ...(isString(orderDataTyped.tier) && { tier: orderDataTyped.tier }),
+          ...(Array.isArray(orderDataTyped.briefs) && { briefs: orderDataTyped.briefs as Brief[] }),
+          status: isString(orderDataTyped.status) ? orderDataTyped.status : '',
+          createdAt: isString(orderDataTyped.createdAt) ? orderDataTyped.createdAt : '',
+          ...(isString(orderDataTyped.updatedAt) && { updatedAt: orderDataTyped.updatedAt }),
+          ...(isNumber(orderDataTyped.subtotal) && { subtotal: orderDataTyped.subtotal }),
+          ...(isNumber(orderDataTyped.handlingFee) && { handlingFee: orderDataTyped.handlingFee }),
+          ...(isNumber(orderDataTyped.uniqueCode) && { uniqueCode: orderDataTyped.uniqueCode }),
+          totalAmount: isNumber(orderDataTyped.totalAmount) ? orderDataTyped.totalAmount : 0,
+          ...(isValidObject(orderDataTyped.statusHistory) && { statusHistory: orderDataTyped.statusHistory as Record<string, string> }),
+          ...(isString(orderDataTyped.customerName) && { customerName: orderDataTyped.customerName }),
+          ...(isString(orderDataTyped.customerEmail) && { customerEmail: orderDataTyped.customerEmail }),
+          ...(isString(orderDataTyped.customerPhone) && { customerPhone: orderDataTyped.customerPhone }),
+          ...(isString(orderDataTyped.customerTelegram) && { customerTelegram: orderDataTyped.customerTelegram }),
+          ...(isString(orderDataTyped.customerAddress) && { customerAddress: orderDataTyped.customerAddress }),
+        };
+
+      return convertBackendOrderToOrder(backendOrder);
+    },
+    (error): never => {
+      throw handleServiceError(error, 'Gagal mengambil data pesanan dari backend.');
+    },
+  );
+};
+
+/**
+ * Gets all orders from backend
+ */
+export const getAllOrders = async (): Promise<Order[]> => {
+  return tryCatch<Order[], never>(
+    async (): Promise<Order[]> => {
+      const response = await backendService.getOrders();
+      
+      if (!response.success || !response.data) {
+        return [];
+      }
+
+      return response.data.map((backendOrderData: unknown): Order => {
+        if (!isValidObject(backendOrderData)) {
+          throw new ValidationException('Data pesanan tidak valid dari backend');
+        }
+
+        // Validate and normalize briefs if present
+        if (Array.isArray(backendOrderData.briefs)) {
+          backendOrderData.briefs = backendOrderData.briefs.map(validateAndNormalizeBrief);
+        }
+        
+        const backendOrder: BackendOrder = {
+          id: isString(backendOrderData.id) ? backendOrderData.id : '',
+          ...(isString(backendOrderData.tier) && { tier: backendOrderData.tier }),
+          ...(Array.isArray(backendOrderData.briefs) && { briefs: backendOrderData.briefs as Brief[] }),
+          status: isString(backendOrderData.status) ? backendOrderData.status : '',
+          createdAt: isString(backendOrderData.createdAt) ? backendOrderData.createdAt : '',
+          ...(isString(backendOrderData.updatedAt) && { updatedAt: backendOrderData.updatedAt }),
+          ...(isNumber(backendOrderData.subtotal) && { subtotal: backendOrderData.subtotal }),
+          ...(isNumber(backendOrderData.handlingFee) && { handlingFee: backendOrderData.handlingFee }),
+          ...(isNumber(backendOrderData.uniqueCode) && { uniqueCode: backendOrderData.uniqueCode }),
+          totalAmount: isNumber(backendOrderData.totalAmount) ? backendOrderData.totalAmount : 0,
+          ...(isValidObject(backendOrderData.statusHistory) && { statusHistory: backendOrderData.statusHistory as Record<string, string> }),
+          ...(isString(backendOrderData.customerName) && { customerName: backendOrderData.customerName }),
+          ...(isString(backendOrderData.customerEmail) && { customerEmail: backendOrderData.customerEmail }),
+          ...(isString(backendOrderData.customerPhone) && { customerPhone: backendOrderData.customerPhone }),
+          ...(isString(backendOrderData.customerTelegram) && { customerTelegram: backendOrderData.customerTelegram }),
+          ...(isString(backendOrderData.customerAddress) && { customerAddress: backendOrderData.customerAddress }),
+        };
+        
+        return convertBackendOrderToOrder(backendOrder);
+      });
+    },
+    (error): never => {
+      throw handleServiceError(error, 'Gagal mengambil data pesanan dari backend.');
+    },
+  );
+};
+
+/**
+ * Updates order with customer information
+ */
+export const updateOrderWithCustomerInfo = async (
+  orderId: string,
+  customerData: CustomerData,
+): Promise<void> => {
+  await tryCatch(
+    async (): Promise<void> => {
+      if (!orderId) {
+        throw new ValidationException('ID Pesanan wajib diisi.');
+      }
+
+      validateCustomerData(customerData);
+
+      // Send update to backend
+      // Note: Backend currently only accepts name and email, so we use telegram as email temporarily
+      const response = await backendService.updateCustomerInfo(orderId, {
+        name: customerData.name,
+        email: customerData.telegram, // Use telegram as email temporarily
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || 'Gagal memperbarui info pelanggan');
+      }
+    },
+    (error): AppException => {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return new NotFoundException(
+          `Pesanan dengan ID ${orderId} tidak ditemukan.`,
+          { orderId },
+        );
+      }
+      return handleServiceError(
+        error,
+        'Gagal memperbarui info pelanggan di backend.',
+      );
+    },
+  );
+};
+
+/**
+ * Updates order status
+ */
+export const updateOrderStatus = async (
+  orderId: string,
+  status: string,
+): Promise<void> => {
+  await tryCatch(
+    async (): Promise<void> => {
+      const validatedStatus = OrderStatusEnum.safeParse(status);
+      
+      if (!orderId || !validatedStatus.success) {
+        throw new ValidationException(
+          'ID Pesanan dan status baru yang valid wajib diisi.',
+        );
+      }
+
+      const response = await backendService.updateOrderStatus(orderId, status);
+
+      if (!response.success) {
+        throw new Error(response.error || 'Gagal memperbarui status pesanan');
+      }
+    },
+    (error): AppException => {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return new NotFoundException(
+          `Pesanan dengan ID ${orderId} tidak ditemukan.`,
+          { orderId },
+        );
+      }
+      return handleServiceError(
+        error,
+        'Gagal memperbarui status pesanan di backend.',
+      );
+    },
+  );
+};
+
+/**
+ * Confirms payment for order IDs
+ */
+export const confirmPayment = async (orderIds: string[]): Promise<void> => {
+  await tryCatch(
+    async (): Promise<void> => {
+      if (!orderIds || orderIds.length === 0) {
+        throw new ValidationException('Daftar ID Pesanan tidak boleh kosong.');
+      }
+
+      const newStatus = 'Pembayaran Sedang Diverifikasi';
+
+      // Verify all orders exist
+      await Promise.all(
+        orderIds.map(async (id): Promise<Order | null> => {
+          const order = await getOrderById(id);
+          if (!order) {
+            throw new NotFoundException(
+              `Pesanan dengan ID ${id} tidak ditemukan saat konfirmasi.`,
+            );
+          }
+          return order;
+        }),
+      );
+
+      // Update status for each order
+      await Promise.all(
+        orderIds.map((orderId): Promise<void> => 
+          updateOrderStatus(orderId, newStatus),
+        ),
+      );
+    },
+    (error): AppException => {
+      if (error instanceof NotFoundException) {
+        return error;
+      }
+      return handleServiceError(
+        error,
+        'Gagal memperbarui status pesanan di backend.',
+      );
+    },
+  );
+};
+
+/**
+ * Deletes an order
+ */
+export const deleteOrder = async (orderId: string): Promise<void> => {
+  await tryCatch(
+    async (): Promise<void> => {
+      if (!orderId) {
+        throw new ValidationException('ID Pesanan wajib diisi.');
+      }
+
+      const response = await backendService.deleteOrder(orderId);
+
+      if (!response.success) {
+        throw new Error(response.error || 'Gagal menghapus pesanan');
+      }
+    },
+    (error): AppException => {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return new NotFoundException(
+          `Pesanan dengan ID ${orderId} tidak ditemukan.`,
+          { orderId },
+        );
+      }
+      return handleServiceError(error, 'Gagal menghapus pesanan di backend.');
+    },
+  );
+};

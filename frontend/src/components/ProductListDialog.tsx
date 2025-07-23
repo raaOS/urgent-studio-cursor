@@ -1,48 +1,120 @@
 
-"use client";
+'use client';
 
-import { useState, useRef, useEffect, MouseEvent } from "react";
-import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { ImageIcon, Loader2, Minus, Plus, ShoppingCart, X } from 'lucide-react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { MouseEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Minus, Plus, ImageIcon, Loader2, X, ShoppingCart } from "lucide-react";
-import type { Product } from "@/lib/types";
-import { getProductsForTier } from "@/lib/products";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "./ui/scroll-area";
-import { useToast } from "@/hooks/use-toast";
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/hooks/use-toast';
+import { getProductsForTier, ProductMaster } from '@/lib/products';
 
+// Interfaces
 interface ProductListDialogProps {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   initialTierName: string;
 }
 
-// 1. Image Preview Modal (improved with better event handling)
+interface ImagePreviewModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  imageUrl: string;
+  imageName: string;
+}
+
+interface PreviewImageState {
+  url: string;
+  name: string;
+}
+
+interface CartProduct extends ProductMaster {
+  instanceId: string;
+}
+
+// Constants
+const TIERS: readonly string[] = ['Budget Kaki Lima', 'Budget UMKM', 'Budget E-commerce'] as const;
+
+const CURRENCY_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
+  style: 'currency',
+  currency: 'IDR',
+  minimumFractionDigits: 0,
+} as const;
+
+// Helper functions
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('id-ID', CURRENCY_FORMAT_OPTIONS).format(amount);
+}
+
+function isValidCartData(data: unknown): data is CartProduct[] {
+  if (!Array.isArray(data)) {
+    return false;
+  }
+  
+  return data.every((item: unknown): item is CartProduct => {
+    if (typeof item !== 'object' || item === null) {
+      return false;
+    }
+    
+    const cartItem = item as Record<string, unknown>;
+    return (
+      typeof cartItem.id === 'string' &&
+      typeof cartItem.name === 'string' &&
+      typeof cartItem.tier === 'string' &&
+      typeof cartItem.price === 'number' &&
+      typeof cartItem.imageUrl === 'string' &&
+      typeof cartItem.instanceId === 'string'
+    );
+  });
+}
+
+function parseCartFromStorage(): CartProduct[] {
+  try {
+    const cartFromSession = sessionStorage.getItem('globalCart');
+    if (cartFromSession === null || cartFromSession === undefined || cartFromSession === '') {
+      return [];
+    }
+    
+    const parsed: unknown = JSON.parse(cartFromSession);
+    return isValidCartData(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to parse cart from session storage:', error);
+    return [];
+  }
+}
+
+function saveCartToStorage(cart: CartProduct[]): void {
+  try {
+    sessionStorage.setItem('globalCart', JSON.stringify(cart));
+    window.dispatchEvent(new Event('cartUpdated'));
+  } catch (error) {
+    console.error('Failed to save cart to session storage:', error);
+  }
+}
+
+// Image Preview Modal Component
 function ImagePreviewModal({
   isOpen,
   onClose,
   imageUrl,
   imageName,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  imageUrl: string;
-  imageName: string;
-}) {
+}: ImagePreviewModalProps): JSX.Element | null {
   const modalRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleEsc = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+  useEffect((): (() => void) | undefined => {
+    const handleEsc = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         onClose();
@@ -50,29 +122,34 @@ function ImagePreviewModal({
     };
 
     if (isOpen) {
-      document.addEventListener("keydown", handleEsc, true);
+      document.addEventListener('keydown', handleEsc, true);
       const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
+      document.body.style.overflow = 'hidden';
+      
       if (modalRef.current) {
         modalRef.current.focus();
       }
 
-      return () => {
-        document.removeEventListener("keydown", handleEsc, true);
+      return (): void => {
+        document.removeEventListener('keydown', handleEsc, true);
         document.body.style.overflow = originalOverflow;
       };
     }
+    
+    return undefined;
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
-  const handleBackdropClick = (e: MouseEvent<HTMLDivElement>) => {
+  const handleBackdropClick = (e: MouseEvent<HTMLDivElement>): void => {
     e.preventDefault();
     e.stopPropagation();
     onClose();
   };
 
-  const handleContentClick = (e: MouseEvent<HTMLDivElement>) => {
+  const handleContentClick = (e: MouseEvent<HTMLDivElement>): void => {
     e.preventDefault();
     e.stopPropagation();
     onClose();
@@ -82,14 +159,14 @@ function ImagePreviewModal({
     <div
       ref={modalRef}
       style={{
-        position: "fixed",
+        position: 'fixed',
         inset: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.8)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         zIndex: 99999,
-        cursor: "pointer",
+        cursor: 'pointer',
       }}
       onClick={handleBackdropClick}
       tabIndex={-1}
@@ -99,25 +176,25 @@ function ImagePreviewModal({
     >
       <div
         style={{
-          position: "relative",
-          backgroundColor: "#fff",
+          position: 'relative',
+          backgroundColor: '#fff',
           borderRadius: 8,
-          overflow: "hidden",
-          maxWidth: "90vw",
-          maxHeight: "90vh",
-          cursor: "default",
-          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+          overflow: 'hidden',
+          maxWidth: '90vw',
+          maxHeight: '90vh',
+          cursor: 'default',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
         }}
         onClick={handleContentClick}
       >
         <div
           style={{
-            width: "min(500px, 90vw)",
-            height: "min(500px, 90vh)",
-            position: "relative",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            width: 'min(500px, 90vw)',
+            height: 'min(500px, 90vh)',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           <Image
@@ -125,7 +202,7 @@ function ImagePreviewModal({
             alt={imageName}
             fill
             sizes="(max-width: 768px) 90vw, 500px"
-            style={{ objectFit: "contain" }}
+            style={{ objectFit: 'contain' }}
             priority
           />
         </div>
@@ -135,79 +212,78 @@ function ImagePreviewModal({
   );
 }
 
-// 2. Komponen utama
+// Main Component
 export function ProductListDialog({
   isOpen,
   setIsOpen,
   initialTierName,
-}: ProductListDialogProps) {
+}: ProductListDialogProps): JSX.Element {
   const router = useRouter();
   const { toast } = useToast();
-  const [cart, setCart] = useState<Product[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string; } | null>(null);
+  const [cart, setCart] = useState<CartProduct[]>([]);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [previewImage, setPreviewImage] = useState<PreviewImageState | null>(null);
 
-  // Load cart from sessionStorage on mount and when dialog opens
-  useEffect(() => {
+  // Load cart from sessionStorage when dialog opens
+  useEffect((): void => {
     if (isOpen) {
-      const cartFromSession = sessionStorage.getItem("globalCart");
-      if (cartFromSession) {
-        try {
-          setCart(JSON.parse(cartFromSession));
-        } catch (e) {
-          console.error("Failed to parse cart from session storage:", e);
-          setCart([]);
-        }
-      } else {
-        setCart([]);
-      }
+      const cartData = parseCartFromStorage();
+      setCart(cartData);
     }
   }, [isOpen]);
 
-  const handleQuantityChange = (product: Product, change: number) => {
-    let newCart = [...cart];
-    const { name, tier, price, promoPrice, imageUrl } = product;
-    const baseProduct = { id: product.id, name, tier, price, promoPrice, imageUrl };
+  const handleQuantityChange = (product: ProductMaster, change: number): void => {
+    const newCart = [...cart];
+    const { id, name, tier, price, promoPrice, imageUrl } = product;
+    const baseProduct: Omit<CartProduct, 'instanceId'> = { 
+      id, 
+      name, 
+      tier, 
+      price, 
+      promoPrice: promoPrice ?? 0, 
+      imageUrl,
+      'data-ai-hint': product['data-ai-hint']
+    };
 
     if (change > 0) {
-      // Menambah produk
-      newCart.push({ ...baseProduct, instanceId: `${product.id}-${Date.now()}` });
+      // Add product
+      const newProduct: CartProduct = { 
+        ...baseProduct, 
+        instanceId: `${product.id}-${Date.now()}` 
+      };
+      newCart.push(newProduct);
     } else if (change < 0) {
-      // Mengurangi produk, hapus yang terakhir ditambahkan
-      const lastIndex = newCart.map(item => item.id).lastIndexOf(product.id);
+      // Remove product - remove the last added one
+      const lastIndex = newCart.map((item: CartProduct): string => item.id).lastIndexOf(product.id);
       if (lastIndex !== -1) {
         newCart.splice(lastIndex, 1);
       }
     }
     
     setCart(newCart);
-    sessionStorage.setItem("globalCart", JSON.stringify(newCart));
-    window.dispatchEvent(new Event('cartUpdated')); // Kirim event
+    saveCartToStorage(newCart);
   };
   
-  const handleContinue = () => {
+  const handleContinue = (): void => {
     setIsProcessing(true);
     
     if (cart.length === 0) {
-        toast({
-            variant: "destructive",
-            title: "Keranjang Kosong",
-            description: "Pilih setidaknya satu produk untuk melanjutkan.",
-        });
-        setIsProcessing(false);
-        return;
+      toast({
+        variant: 'destructive',
+        title: 'Keranjang Kosong',
+        description: 'Pilih setidaknya satu produk untuk melanjutkan.',
+      });
+      setIsProcessing(false);
+      return;
     }
     
-    // Simpan keranjang final ke sessionStorage sebelum navigasi
-    sessionStorage.setItem("globalCart", JSON.stringify(cart));
+    // Save final cart to sessionStorage before navigation
+    saveCartToStorage(cart);
     
-    router.push(`/brief`);
-    
-    // Kita tidak perlu menunggu, navigasi akan mengambil alih.
-    // Tombol akan tetap loading sampai halaman baru dimuat.
+    void router.push('/brief');
   };
 
-  const handleImageClick = (e: MouseEvent<HTMLDivElement>, product: Product) => {
+  const handleImageClick = (e: MouseEvent<HTMLDivElement>, product: ProductMaster): void => {
     e.stopPropagation();
     e.preventDefault();
     if (product.imageUrl) {
@@ -215,136 +291,163 @@ export function ProductListDialog({
     }
   };
 
-  const handleClosePreview = () => {
+  const handleClosePreview = (): void => {
     setPreviewImage(null);
   };
 
-  const handleDialogClose = (open: boolean) => {
-    if (isProcessing) return;
+  const handleDialogClose = (open: boolean): void => {
+    if (isProcessing) {
+      return;
+    }
     if (!open) {
       setIsOpen(false);
     }
   };
 
-  const renderPrice = (product: Product) => (
+  const renderPrice = (product: ProductMaster): JSX.Element => (
     <div className="text-sm">
-      {product.promoPrice ? (
+      {(product.promoPrice !== null && product.promoPrice !== undefined) ? (
         <>
           <span className="line-through text-muted-foreground text-xs">
-            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(product.price)}
+            {formatCurrency(product.price)}
           </span>
           <span className="block font-bold text-primary">
-            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(product.promoPrice)}
+            {formatCurrency(product.promoPrice)}
           </span>
         </>
       ) : (
         <span className="font-bold">
-          {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(product.price)}
+          {formatCurrency(product.price)}
         </span>
       )}
     </div>
   );
-  
-  const tiers = ["Budget Kaki Lima", "Budget UMKM", "Budget E-commerce"];
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={handleDialogClose}>
         <DialogContent
           className="max-w-3xl w-full border-2 border-foreground shadow-neo p-0"
-          style={{ height: "90vh", maxHeight: "90vh", display: 'flex', flexDirection: 'column' }}
-          onClick={() => {
-            if (previewImage) handleClosePreview();
+          style={{ height: '90vh', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+          onClick={(): void => {
+            if (previewImage !== null) {
+              handleClosePreview();
+            }
           }}
         >
           <DialogHeader className="p-4 bg-background flex flex-row items-center justify-between border-b-2 border-foreground">
             <DialogTitle className="text-foreground text-lg">
               Pilih Produk Desain
             </DialogTitle>
-             <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)} className="h-8 w-8">
-                <X className="h-5 w-5"/>
-             </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={(): void => setIsOpen(false)} 
+              className="h-8 w-8 overflow-hidden"
+            >
+              <X className="h-5 w-5"/>
+            </Button>
           </DialogHeader>
 
           <Tabs defaultValue={initialTierName} className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="mx-4">
-                {tiers.map(tier => (
-                    <TabsTrigger key={tier} value={tier}>{tier}</TabsTrigger>
-                ))}
+              {TIERS.map((tier: string): JSX.Element => (
+                <TabsTrigger key={tier} value={tier}>{tier}</TabsTrigger>
+              ))}
             </TabsList>
             
             <div className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full">
-                    <div className="p-4 sm:p-6">
-                    {tiers.map(tier => (
-                        <TabsContent key={tier} value={tier} className="mt-0">
-                            <div className="space-y-4">
-                            {getProductsForTier(tier).map((product) => {
-                              const quantity = cart.filter(item => item.id === product.id).length;
-                              const isPromo = Boolean(product.promoPrice && product.promoPrice < product.price);
-                              
-                              return (
-                                <div
-                                  key={product.id}
-                                  className="relative border-2 border-foreground rounded-lg p-4 shadow-sm flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center bg-card transition-all"
+              <ScrollArea className="h-full">
+                <div className="p-4 sm:p-6">
+                  {TIERS.map((tier: string): JSX.Element => (
+                    <TabsContent key={tier} value={tier} className="mt-0">
+                      <div className="space-y-4">
+                        {getProductsForTier(tier).map((product: ProductMaster): JSX.Element => {
+                          const quantity = cart.filter((item: CartProduct): boolean => item.id === product.id).length;
+                          const isPromo = (product.promoPrice !== null && product.promoPrice !== undefined && product.promoPrice < product.price);
+                          
+                          return (
+                            <div
+                              key={product.id}
+                              className="relative border-2 border-foreground rounded-lg p-4 shadow-sm flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center bg-card transition-all"
+                            >
+                              {isPromo && (
+                                <div 
+                                  className="starburst absolute -top-4 -left-4 w-16 h-16 bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold pointer-events-none" 
+                                  style={{ lineHeight: '1.1', zIndex: 10 }}
                                 >
-                                  {isPromo && (
-                                    <div className="starburst absolute -top-4 -left-4 w-16 h-16 bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold pointer-events-none" style={{ lineHeight: "1.1", zIndex: 10 }}>
-                                      PROMO
-                                    </div>
-                                  )}
-
-                                  <div className="flex items-start gap-4 flex-grow">
-                                    <div
-                                      className="w-16 h-16 bg-muted rounded-md overflow-hidden flex items-center justify-center shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                                      onClick={(e) => handleImageClick(e, product as Product)}
-                                      role="button"
-                                      tabIndex={0}
-                                      aria-label={`View ${product.name} image`}
-                                    >
-                                      {product.imageUrl ? (
-                                        <Image src={product.imageUrl} alt={product.name} width={64} height={64} className="object-cover w-full h-full" data-ai-hint="product design"/>
-                                      ) : (
-                                        <ImageIcon className="w-8 h-8 text-muted-foreground" />
-                                      )}
-                                    </div>
-                                    <div className="flex flex-col">
-                                      <span className="text-sm font-semibold">{product.name}</span>
-                                      {renderPrice(product as Product)}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center justify-end gap-2 shrink-0">
-                                    <Button type="button" size="icon" onClick={() => handleQuantityChange(product as Product, -1)} disabled={quantity === 0 || isProcessing} className="h-8 w-8 bg-[#ffe502] text-foreground hover:bg-[#ffe502]/90 border-2 border-foreground disabled:bg-muted disabled:text-muted-foreground">
-                                      <Minus className="h-4 w-4" />
-                                    </Button>
-                                    <span className="w-6 text-center font-bold text-lg">{quantity}</span>
-                                    <Button type="button" size="icon" className="h-8 w-8 border-2 border-foreground bg-primary hover:bg-primary/90" onClick={() => handleQuantityChange(product as Product, 1)} disabled={isProcessing}>
-                                      <Plus className="h-4 w-4" />
-                                    </Button>
-                                  </div>
+                                  PROMO
                                 </div>
-                              );
-                            })}
+                              )}
+
+                              <div className="flex items-start gap-4 flex-grow">
+                                <div
+                                  className="w-16 h-16 bg-muted rounded-md overflow-hidden flex items-center justify-center shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                                  onClick={(e: MouseEvent<HTMLDivElement>): void => handleImageClick(e, product)}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`View ${product.name} image`}
+                                >
+                                  {(product.imageUrl !== null && product.imageUrl !== undefined && product.imageUrl !== '') ? (
+                                    <Image 
+                                      src={product.imageUrl ?? ''} 
+                                      alt={product.name} 
+                                      width={64} 
+                                      height={64} 
+                                      className="object-cover w-full h-full" 
+                                      data-ai-hint="product design"
+                                    />
+                                  ) : (
+                                    <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                                  )}
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-semibold">{product.name}</span>
+                                  {renderPrice(product)}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-2 shrink-0">
+                                <Button 
+                                  type="button" 
+                                  size="icon" 
+                                  onClick={(): void => handleQuantityChange(product, -1)} 
+                                  disabled={quantity === 0 || isProcessing} 
+                                  className="h-8 w-8 bg-[#ffe502] text-foreground hover:bg-[#ffe502]/90 border-2 border-foreground disabled:bg-muted disabled:text-muted-foreground overflow-hidden"
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </Button>
+                                <span className="w-6 text-center font-bold text-lg">{quantity}</span>
+                                <Button 
+                                  type="button" 
+                                  size="icon" 
+                                  className="h-8 w-8 border-2 border-foreground bg-primary hover:bg-primary/90 overflow-hidden" 
+                                  onClick={(): void => handleQuantityChange(product, 1)} 
+                                  disabled={isProcessing}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              </div>
                             </div>
-                        </TabsContent>
-                    ))}
-                    </div>
-                </ScrollArea>
+                          );
+                        })}
+                      </div>
+                    </TabsContent>
+                  ))}
+                </div>
+              </ScrollArea>
             </div>
           </Tabs>
 
-          <DialogFooter
-            className="bg-background p-4 border-t-2 border-foreground"
-          >
+          <DialogFooter className="bg-background p-4 border-t-2 border-foreground">
             <div className="flex items-center gap-2 w-full">
               <Button
                 variant="outline"
-                onClick={() => setIsOpen(false)}
+                onClick={(): void => setIsOpen(false)}
                 className="font-bold border-2 border-foreground bg-muted text-muted-foreground w-1/3 h-11"
                 disabled={isProcessing}
               >
-                Tutup
+                <span className="overflow-hidden text-ellipsis">Tutup</span>
               </Button>
               <Button
                 onClick={handleContinue}
@@ -352,29 +455,30 @@ export function ProductListDialog({
                 className="font-bold border-2 border-foreground bg-accent text-accent-foreground hover:bg-accent/90 shadow-neo hover:shadow-neo-hover active:shadow-neo-sm transition-all disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none disabled:cursor-not-allowed w-2/3 h-11"
               >
                 {isProcessing ? (
-                    <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Memproses...
-                    </>
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span className="overflow-hidden text-ellipsis">Memproses...</span>
+                  </>
                 ) : (
-                    <>
-                        Lanjutkan & Isi Brief <ShoppingCart className="ml-2 h-4 w-4"/> ({cart.length})
-                    </>
+                  <>
+                    <span className="overflow-hidden text-ellipsis">Lanjutkan & Isi Brief</span> 
+                    <ShoppingCart className="ml-2 h-4 w-4"/> ({cart.length})
+                  </>
                 )}
               </Button>
             </div>
-             {isProcessing && (
-                <p className="text-xs text-muted-foreground text-center animate-pulse">
-                    Menyiapkan brief, mohon tunggu...
-                </p>
+            {isProcessing && (
+              <p className="text-xs text-muted-foreground text-center animate-pulse">
+                Menyiapkan brief, mohon tunggu...
+              </p>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {previewImage && (
+      {(previewImage !== null) && (
         <ImagePreviewModal
-          isOpen={!!previewImage}
+          isOpen={previewImage !== null}
           onClose={handleClosePreview}
           imageUrl={previewImage.url}
           imageName={previewImage.name}

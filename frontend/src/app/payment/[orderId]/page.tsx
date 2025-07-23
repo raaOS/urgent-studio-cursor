@@ -1,13 +1,15 @@
 
-import { PaymentClientPage } from "@/components/PaymentClientPage";
 import { Suspense } from "react";
+
+import PaymentClientPage from "@/components/PaymentClientPage";
 
 // Halaman Pembayaran sekarang menerima beberapa orderId melalui parameter dinamis.
 // Ini diperlukan untuk alur "Keranjang Global" di mana satu sesi checkout
 // bisa menghasilkan beberapa pesanan terpisah (satu per tier).
 
-function PaymentPageComponent({ params }: { params: { orderId: string } }) {
-    const orderIdsParam = params.orderId || '';
+async function PaymentPageComponent({ params }: { params: Promise<{ orderId: string }> }): Promise<JSX.Element> {
+    const resolvedParams = await params;
+    const orderIdsParam = resolvedParams.orderId || '';
 
     if (!orderIdsParam) {
         // Handle case where orderId is missing.
@@ -22,11 +24,11 @@ function PaymentPageComponent({ params }: { params: { orderId: string } }) {
     // Pisahkan string menjadi array ID
     const orderIds = orderIdsParam.split(',');
 
-    return <PaymentClientPage orderIds={orderIds} />;
+    return <PaymentClientPage params={{ orderId: orderIdsParam }} />;
 }
 
 
-export default function PaymentPage({ params }: { params: { orderId: string } }) {
+export default async function PaymentPage({ params }: { params: Promise<{ orderId: string }> }) {
     return (
         <Suspense fallback={<div className="flex min-h-screen w-full items-center justify-center">Memuat Halaman Pembayaran...</div>}>
             <PaymentPageComponent params={params} />

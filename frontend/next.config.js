@@ -1,6 +1,37 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Production optimizations
+  compress: true,
+  poweredByHeader: false,
+  
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+        ],
+      },
+    ];
+  },
+
   images: {
     remotePatterns: [
       {
@@ -11,13 +42,21 @@ const nextConfig = {
       },
     ],
   },
-  // experimental: {
-  //   // This allows the Next.js dev server to accept requests from the
-  //   // Firebase Studio environment.
-  //   allowedDevOrigins: [
-  //     "https://*.cluster-ancjwrkgr5dvux4qug5rbzyc2y.cloudworkstations.dev",
-  //   ],
-  // },
+  
+  // Environment-specific configurations
+  env: {
+    CUSTOM_KEY: process.env.CUSTOM_KEY,
+  },
+  
+  // Menambahkan konfigurasi untuk menangani permintaan Vite
+  async rewrites() {
+    return [
+      {
+        source: '/@vite/client',
+        destination: '/api/dummy-vite',
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

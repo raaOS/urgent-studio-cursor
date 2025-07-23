@@ -28,7 +28,7 @@ export class AppException extends Error {
    * Detail tambahan atau konteks tentang error, berguna untuk logging.
    * Dapat berisi objek apa pun yang relevan.
    */
-  public readonly context?: Record<string, any>;
+  public readonly context?: Record<string, unknown>;
 
   /**
    * @param statusCode Kode status HTTP.
@@ -40,7 +40,7 @@ export class AppException extends Error {
     statusCode: number,
     message: string,
     errorCode: string,
-    context?: Record<string, any>
+    context?: Record<string, unknown>
   ) {
     super(message); // Memanggil constructor dari kelas Error bawaan
     
@@ -49,11 +49,15 @@ export class AppException extends Error {
     
     this.statusCode = statusCode;
     this.errorCode = errorCode;
-    this.context = context;
     this.name = this.constructor.name;
+    
+    // Only assign context if it exists and has properties
+    if (context !== null && context !== undefined && Object.keys(context).length > 0) {
+      this.context = context;
+    }
 
     // Menangkap stack trace, tidak termasuk frame constructor ini
-    if (Error.captureStackTrace) {
+    if (typeof Error.captureStackTrace === 'function') {
       Error.captureStackTrace(this, this.constructor);
     }
   }
@@ -65,7 +69,7 @@ export class AppException extends Error {
  * Error yang dilempar ketika validasi input gagal.
  */
 export class ValidationException extends AppException {
-  constructor(message: string, context?: Record<string, any>) {
+  constructor(message: string, context?: Record<string, unknown>) {
     super(400, message, 'E_VALIDATION_FAILED', context);
   }
 }
@@ -74,7 +78,7 @@ export class ValidationException extends AppException {
  * Error yang dilempar ketika sebuah resource tidak ditemukan.
  */
 export class NotFoundException extends AppException {
-  constructor(message: string, context?: Record<string, any>) {
+  constructor(message: string, context?: Record<string, unknown>) {
     super(404, message, 'E_RESOURCE_NOT_FOUND', context);
   }
 }
@@ -83,7 +87,7 @@ export class NotFoundException extends AppException {
  * Error untuk masalah internal server yang tidak terduga.
  */
 export class InternalServerException extends AppException {
-    constructor(message: string = 'Terjadi kesalahan internal pada server.', context?: Record<string, any>) {
+    constructor(message: string = 'Terjadi kesalahan internal pada server.', context?: Record<string, unknown>) {
       super(500, message, 'E_INTERNAL_SERVER', context);
     }
   }

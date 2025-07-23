@@ -1,9 +1,11 @@
 
-import { OrderTracker } from '@/components/OrderTracker';
 import { Suspense } from 'react';
 
-export default function TrackPage({ searchParams }: { searchParams?: { orderId?: string } }) {
-  const orderId = searchParams?.orderId || '';
+import { OrderTracker } from '@/components/OrderTracker';
+
+export default async function TrackPage({ searchParams }: { searchParams?: Promise<{ orderId?: string }> }): Promise<JSX.Element> {
+  const resolvedSearchParams = await searchParams;
+  const orderId = resolvedSearchParams?.orderId ?? '';
 
   return (
     <div className="flex min-h-screen w-full flex-col">

@@ -94,10 +94,28 @@ export default {
             height: '0',
           },
         },
+        'accordion-icon-rotate': {
+          from: {
+            transform: 'rotate(0deg)',
+          },
+          to: {
+            transform: 'rotate(180deg)',
+          },
+        },
+        'accordion-icon-bounce': {
+          '0%, 100%': {
+            transform: 'translateY(0)',
+          },
+          '50%': {
+            transform: 'translateY(-15%)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'accordion-icon-rotate': 'accordion-icon-rotate 0.3s ease-in-out',
+        'accordion-icon-bounce': 'accordion-icon-bounce 0.5s ease-in-out',
       },
     },
   },

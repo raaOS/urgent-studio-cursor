@@ -87,4 +87,91 @@
   .starburst {
     clip-path: polygon(100% 50%,84.24% 57.28%,95.68% 70.34%,78.32% 70.57%,83.46% 87.16%,67.5% 80.31%,65.45% 97.55%,53.66% 84.81%,44.77% 99.73%,39.18% 83.29%,25% 93.3%,26.58% 76.01%,9.55% 79.39%,18.03% 64.24%,1.09% 60.4%,15% 50%,1.09% 39.6%,18.03% 35.76%,9.55% 20.61%,26.58% 23.99%,25% 6.7%,39.18% 16.71%,44.77% 0.27%,53.66% 15.19%,65.45% 2.45%,67.5% 19.69%,83.46% 12.84%,78.32% 29.43%,95.68% 29.66%,84.24% 42.72%);
   }
+  
+  /* Neubrutalism Tooltip Styles */
+  [data-tooltip] { 
+    position: relative; 
+    cursor: pointer; 
+  } 
+  
+  [data-tooltip]::after { 
+     text-transform: none; 
+     font-size: .9em; 
+     line-height: 1; 
+     position: absolute; 
+     display: none; 
+     opacity: 0; 
+   } 
+  
+  /* Removed triangle pointer */
+  [data-tooltip]::before { 
+    display: none !important;
+  } 
+  
+  [data-tooltip]::after { 
+     content: attr(data-tooltip); 
+     text-align: center; 
+     min-width: 3em; 
+     max-width: 21em; 
+     white-space: normal; /* Mengizinkan teks untuk wrap ke baris berikutnya */
+     overflow: visible; /* Memastikan teks tidak terpotong */
+     padding: 6px 8px; 
+     border-radius: 4px; 
+     background: #FFFFFF; 
+     color: #000000; 
+     z-index: 100; 
+     border: 2px solid black;
+     filter: none;
+     opacity: 0.7; /* Membuat teks terlihat semi-transparan */
+     width: auto; /* Menyesuaikan lebar dengan konten */
+   } 
+  
+  [data-tooltip]:hover::after { 
+    display: block; 
+  } 
+  
+  [data-tooltip='']::before, 
+  [data-tooltip='']::after { 
+    display: none !important; 
+  } 
+  
+  /* Removed top triangle positioning */
+  
+  [data-tooltip]:not([data-flow])::after, 
+  [data-tooltip][data-flow^="top"]::after { 
+    bottom: calc(100% + 5px); 
+  } 
+  
+  [data-tooltip]:not([data-flow])::before, 
+  [data-tooltip]:not([data-flow])::after, 
+  [data-tooltip][data-flow^="top"]::before, 
+  [data-tooltip][data-flow^="top"]::after { 
+    left: 50%; 
+    transform: translate(-50%, -.4em); 
+  } 
+  
+  /* Removed bottom triangle positioning */
+  
+  [data-tooltip][data-flow^="bottom"]::after { 
+     top: calc(100% + 15px); 
+   } 
+  
+  [data-tooltip][data-flow^="bottom"]::before, 
+  [data-tooltip][data-flow^="bottom"]::after { 
+    left: 50%; 
+    transform: translate(-50%, .4em); 
+  } 
+  
+  @keyframes tooltip-vert { 
+    to { 
+      opacity: 1; 
+      transform: translate(-50%, 0); 
+    } 
+  } 
+  
+  [data-tooltip]:not([data-flow]):hover::after, 
+  [data-tooltip][data-flow^="top"]:hover::after, 
+  [data-tooltip][data-flow^="bottom"]:hover::after { 
+    animation: tooltip-vert .5s ease-out forwards; 
+  } 
 }
