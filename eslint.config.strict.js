@@ -1,3 +1,7 @@
+// 🔒 STRICT ESLint Config - BACKUP
+// This is the original strict configuration
+// Use this AFTER successful deployment and when you want to improve code quality
+
 const js = require('@eslint/js');
 
 module.exports = [
@@ -38,10 +42,7 @@ module.exports = [
       '.next/**',
       'backend/**',
       '*.log',
-      '.git/**',
-      'frontend/.next/**',
-      'frontend/out/**',
-      'frontend/build/**'
+      '.git/**'
     ]
   },
   

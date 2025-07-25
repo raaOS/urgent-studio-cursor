@@ -101,7 +101,7 @@ function fixExplicitFunctionReturnType(content) {
   // Tambahkan return type untuk function declarations
   content = content.replace(
     /function\s+(\w+)\s*\([^)]*\)\s*{/g,
-    (match, functionName) => {
+    (match, _functionName) => {
       if (match.includes(': ')) {
         return match; // Sudah ada return type
       }
@@ -112,7 +112,7 @@ function fixExplicitFunctionReturnType(content) {
   // Tambahkan return type untuk arrow functions
   content = content.replace(
     /const\s+(\w+)\s*=\s*\([^)]*\)\s*=>\s*{/g,
-    (match, functionName) => {
+    (match, _functionName) => {
       if (match.includes(': ')) {
         return match; // Sudah ada return type
       }
@@ -158,8 +158,8 @@ filesToFix.forEach(filePath => {
     writeFile(fullPath, content);
     
     console.log(`✅ Berhasil memperbaiki: ${filePath}`);
-  } catch (error) {
-    console.error(`❌ Gagal memperbaiki ${filePath}:`, error.message);
+  } catch {
+    console.error(`❌ Gagal memperbaiki ${filePath}`);
   }
 });
 
@@ -170,7 +170,7 @@ console.log('📝 Menjalankan ESLint untuk memeriksa hasil...\n');
 try {
   execSync('npm run lint', { stdio: 'inherit' });
   console.log('\n✅ Semua masalah ESLint telah diperbaiki!');
-} catch (error) {
+} catch {
   console.log('\n⚠️  Masih ada beberapa masalah yang perlu diperbaiki manual.');
   console.log('💡 Jalankan "npm run lint" untuk melihat detail masalah yang tersisa.');
 }

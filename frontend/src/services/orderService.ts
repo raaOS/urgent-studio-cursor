@@ -13,7 +13,7 @@ import {
   Brief,
 } from '@/lib/types';
 
-import { backendService } from './backendservice';
+import { backendService } from './backendService';
 import { handleServiceError, tryCatch } from './errorHandler';
 import { CreateOrderSchema } from './validationSchemas';
 

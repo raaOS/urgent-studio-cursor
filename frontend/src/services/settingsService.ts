@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { ValidationException } from '../lib/exceptions';
 
-import { backendService } from './backendservice';
+import { backendService } from './backendService';
 import { tryCatch } from './errorHandler';
 
 // Skema validasi untuk settings
