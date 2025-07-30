@@ -1,265 +1,149 @@
-'use client';
+// HTTP Client for API requests - Simple implementation
+import logger from './logger';
+import { getAuthToken } from '../lib/auth';
 
-import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-
-import { AppException, ValidationException, NotFoundException, InternalServerException } from '@/lib/exceptions';
-
-// Definisi interface untuk respons API
-export interface ApiResponse<T = unknown> {
-  success: boolean;
+export interface ApiResponse<T> {
   data?: T;
+  success: boolean;
   message?: string;
   error?: string;
-  statusCode?: number;
-  errorCode?: string;
 }
 
-// Konfigurasi default untuk axios
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+export class HttpClient {
+  private baseUrl: string;
 
-// Membuat instance axios dengan konfigurasi default
-const httpClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json'
-  },
-  timeout: 10000 // 10 detik timeout
-});
-
-// Interceptor untuk request
-httpClient.interceptors.request.use(
-  (config) => {
-    // Tambahkan token atau header lain jika diperlukan di masa depan
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+  constructor(baseUrl: string = 'http://localhost:8080') {
+    this.baseUrl = baseUrl;
   }
-);
 
-// Interceptor untuk response
-httpClient.interceptors.response.use(
-  (response: AxiosResponse) => {
-    return response;
-  },
-  (error: AxiosError) => {
-    // Tangani error secara global
-    console.error('API Error:', error);
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const startTime = performance.now();
+    const method = options.method || 'GET';
     
-    // Transformasi error Axios menjadi AppException
-    if (error.response) {
-      // Server merespons dengan status error
-      const { status } = error.response;
-      const errorData = error.response.data as Record<string, unknown>;
-      const message = (errorData?.message as string) ?? (errorData?.error as string) ?? 'Terjadi kesalahan pada server';
-      const errorCode = (errorData?.errorCode as string) ?? 'UNKNOWN_ERROR';
+    // Log request start
+    logger.debug('HTTP Request Started', {
+      method,
+      url,
+      endpoint,
+      headers: options.headers,
+    });
+
+    // Get auth token and add to headers if available
+    const authToken = getAuthToken();
+    const defaultHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add Authorization header if token exists
+    if (authToken) {
+      defaultHeaders['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    // Merge with provided headers
+    const finalHeaders = {
+      ...defaultHeaders,
+      ...options.headers,
+    };
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: finalHeaders,
+      });
+
+      const duration = performance.now() - startTime;
+
+      if (!response.ok) {
+        const errorMessage = `HTTP error! status: ${response.status}`;
+        
+        // Log failed request
+        logger.error('HTTP Request Failed', {
+          method,
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          duration,
+        }, new Error(errorMessage));
+
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
       
-      // Buat AppException berdasarkan status code
-      switch (status) {
-        case 400:
-          return Promise.reject(new ValidationException(message, { errorCode, originalError: error }));
-        case 404:
-          return Promise.reject(new NotFoundException(message, { errorCode }));
-        case 500:
-        default:
-          return Promise.reject(new InternalServerException(message, { errorCode, originalError: error }));
-      }
-    } else if (error.request !== null && error.request !== undefined) {
-      // Request dibuat tapi tidak ada respons
-      return Promise.reject(new InternalServerException(
-        'Tidak dapat terhubung ke server', 
-        { errorCode: 'SERVER_UNREACHABLE' }
-      ));
-    } else {
-      // Error saat setup request
-      const errorMessage = error instanceof Error && error.message !== null && error.message !== undefined && error.message !== "" ? error.message : 'Terjadi kesalahan saat mempersiapkan request';
-      return Promise.reject(new AppException(
-        500,
-        errorMessage, 
-        'REQUEST_SETUP_ERROR',
-        { originalError: errorMessage }
-      ));
+      // Log successful request
+      logger.apiCall(method, url, response.status, duration);
+      
+      return {
+        data,
+        success: true,
+      };
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Log request error
+      logger.error('HTTP Request Error', {
+        method,
+        url,
+        duration,
+        errorMessage,
+      }, error instanceof Error ? error : new Error(errorMessage));
+
+      return {
+        success: false,
+        error: errorMessage,
+      };
     }
   }
-);
 
-// Fungsi helper untuk membuat respons API yang konsisten
-export const createApiResponse = <T>(
-  success: boolean, 
-  data?: T, 
-  message?: string, 
-  error?: string, 
-  statusCode?: number,
-  errorCode?: string
-): ApiResponse<T> => {
-  const response: ApiResponse<T> = {
-    success
-  };
-  
-  // Only add properties if they exist
-  if (message !== undefined) {
-    response.message = message;
+  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'GET',
+    });
   }
-  if (error !== undefined) {
-    response.error = error;
+
+  async post<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    // Log request data (excluding sensitive information)
+    logger.debug('POST Request Data', {
+      endpoint,
+      hasData: !!data,
+      dataType: typeof data,
+    });
+
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : null,
+    });
   }
-  if (statusCode !== undefined) {
-    response.statusCode = statusCode;
+
+  async put<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    // Log request data (excluding sensitive information)
+    logger.debug('PUT Request Data', {
+      endpoint,
+      hasData: !!data,
+      dataType: typeof data,
+    });
+
+    return this.request<T>(endpoint, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : null,
+    });
   }
-  if (errorCode !== undefined) {
-    response.errorCode = errorCode;
+
+  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+    logger.debug('DELETE Request', {
+      endpoint,
+    });
+
+    return this.request<T>(endpoint, {
+      method: 'DELETE',
+    });
   }
-  
-  // Only add data if it exists
-  if (data !== undefined) {
-    response.data = data;
-  }
-  
-  return response;
-};
+}
 
-// Fungsi helper untuk HTTP requests
-export const api = {
-  async get<T>(url: string): Promise<ApiResponse<T>> {
-    try {
-      const response = await httpClient.get<T>(url);
-      return createApiResponse<T>(true, response.data, 'Data berhasil diambil');
-    } catch (error: unknown) {
-      // Tangani error berdasarkan jenisnya
-      if (error instanceof AppException) {
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          error.message, 
-          error.message, 
-          error.statusCode, 
-          error.errorCode
-        );
-      } else {
-        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          'Gagal mengambil data', 
-          errorMessage,
-          500
-        );
-      }
-    }
-  },
-
-  async post<T, D = Record<string, unknown>>(url: string, data: D): Promise<ApiResponse<T>> {
-    try {
-      const response = await httpClient.post<T>(url, data);
-      return createApiResponse<T>(true, response.data, 'Data berhasil dibuat');
-    } catch (error: unknown) {
-      // Tangani error berdasarkan jenisnya
-      if (error instanceof AppException) {
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          error.message, 
-          error.message, 
-          error.statusCode, 
-          error.errorCode
-        );
-      } else {
-        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          'Gagal membuat data', 
-          errorMessage,
-          500
-        );
-      }
-    }
-  },
-
-  async put<T, D = Record<string, unknown>>(url: string, data: D): Promise<ApiResponse<T>> {
-    try {
-      const response = await httpClient.put<T>(url, data);
-      return createApiResponse<T>(true, response.data, 'Data berhasil diperbarui');
-    } catch (error: unknown) {
-      // Tangani error berdasarkan jenisnya
-      if (error instanceof AppException) {
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          error.message, 
-          error.message, 
-          error.statusCode, 
-          error.errorCode
-        );
-      } else {
-        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          'Gagal memperbarui data', 
-          errorMessage,
-          500
-        );
-      }
-    }
-  },
-
-  async patch<T, D = Record<string, unknown>>(url: string, data: D): Promise<ApiResponse<T>> {
-    try {
-      const response = await httpClient.patch<T>(url, data);
-      return createApiResponse<T>(true, response.data, 'Data berhasil diperbarui');
-    } catch (error: unknown) {
-      // Tangani error berdasarkan jenisnya
-      if (error instanceof AppException) {
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          error.message, 
-          error.message, 
-          error.statusCode, 
-          error.errorCode
-        );
-      } else {
-        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          'Gagal memperbarui data', 
-          errorMessage,
-          500
-        );
-      }
-    }
-  },
-
-  async delete<T>(url: string): Promise<ApiResponse<T>> {
-    try {
-      const response = await httpClient.delete<T>(url);
-      return createApiResponse<T>(true, response.data, 'Data berhasil dihapus');
-    } catch (error: unknown) {
-      // Tangani error berdasarkan jenisnya
-      if (error instanceof AppException) {
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          error.message, 
-          error.message, 
-          error.statusCode, 
-          error.errorCode
-        );
-      } else {
-        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
-        return createApiResponse<T>(
-          false, 
-          undefined, 
-          'Gagal menghapus data', 
-          errorMessage,
-          500
-        );
-      }
-    }
-  }
-};
-
-export default httpClient;
+// Create a singleton instance
+export const httpClient = new HttpClient();

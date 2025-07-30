@@ -44,11 +44,11 @@ interface CustomerData {
 }
 
 interface BriefData {
-  tier: string;
   instanceId: string;
   productId: string;
   productName: string;
   briefDetails: string;
+  tier?: string;
   height?: number | string;
   width?: number | string;
   googleDriveAssetLinks?: string;
@@ -68,12 +68,12 @@ interface CreateOrderData {
 }
 
 // Constants
-const DEFAULT_TIER = 'standard';
 const DEFAULT_HANDLING_FEE = 2500;
 const UNIQUE_CODE_MIN = 100;
 const UNIQUE_CODE_MAX = 999;
 const MIN_BRIEF_DETAILS_LENGTH = 10;
 const DEFAULT_BRIEF_DETAILS = 'Deskripsi cukup panjang';
+const DEFAULT_TIER = 'standard';
 
 /**
  * Validates required fields for BackendOrder
@@ -173,7 +173,7 @@ const convertBackendOrderToOrder = (backendOrder: BackendOrder): Order => {
  * Validates cart item fields
  */
 const validateCartItem = (item: Product): void => {
-  const requiredFields: Array<keyof Product> = ['id', 'name', 'price', 'tier'];
+  const requiredFields: Array<keyof Product> = ['id', 'name', 'price'];
   const missingFields = requiredFields.filter(
     field => {
       const value = item[field];
@@ -190,17 +190,8 @@ const validateCartItem = (item: Product): void => {
 };
 
 /**
- * Groups cart items by tier
+ * Removed tier grouping functionality - now handles single unit pricing
  */
-const groupCartByTier = (cart: Product[]): Record<string, Product[]> => {
-  return cart.reduce((acc: Record<string, Product[]>, item: Product) => {
-    if (!acc[item.tier]) {
-      acc[item.tier] = [];
-    }
-    acc[item.tier]!.push(item);
-    return acc;
-  }, {});
-};
 
 /**
  * Calculates subtotal for items
@@ -229,7 +220,7 @@ const createBriefFromProduct = (item: Product): BriefData => {
       : `${item.id}-${Date.now()}`,
     productId: item.id,
     productName: item.name,
-    tier: item.tier,
+    tier: item.tier || DEFAULT_TIER,
     briefDetails: isString(item.briefDetails) && 
       item.briefDetails.length >= MIN_BRIEF_DETAILS_LENGTH
       ? item.briefDetails 
@@ -313,7 +304,7 @@ const validateCustomerData = (customerData: CustomerData): void => {
 };
 
 /**
- * Creates multiple orders from cart, splitting by service tier
+ * Creates order from cart for single-tier pricing
  */
 export const createMultipleOrdersFromCart = async (
   cart: Product[],
@@ -329,40 +320,36 @@ export const createMultipleOrdersFromCart = async (
       cart.forEach(validateCartItem);
 
       const orderIds: string[] = [];
-      const cartByTier = groupCartByTier(cart);
+      
+      // Create single order for all products (no tier grouping)
+      const subtotal = calculateSubtotal(cart);
+      const handlingFee = DEFAULT_HANDLING_FEE;
+      const uniqueCode = generateUniqueCode();
+      const totalAmount = subtotal + handlingFee + uniqueCode;
 
-      for (const [tier, itemsInTier] of Object.entries(cartByTier)) {
-        if (!itemsInTier || itemsInTier.length === 0) {continue;}
+      const orderData: CreateOrderData = {
+        customerName: '',
+        customerEmail: '',
+        status: 'Menunggu Pembayaran',
+        totalAmount,
+        subtotal,
+        handlingFee,
+        uniqueCode,
+        tier: DEFAULT_TIER,
+        briefs: cart.map(createBriefFromProduct),
+      };
 
-        const subtotal = calculateSubtotal(itemsInTier);
-        const handlingFee = DEFAULT_HANDLING_FEE;
-        const uniqueCode = generateUniqueCode();
-        const totalAmount = subtotal + handlingFee + uniqueCode;
+      const parsedOrderData = CreateOrderSchema.parse(orderData);
+      const response = await backendService.createOrder(parsedOrderData);
 
-        const orderData: CreateOrderData = {
-          customerName: '',
-          customerEmail: '',
-          status: 'Menunggu Pembayaran',
-          totalAmount,
-          subtotal,
-          handlingFee,
-          uniqueCode,
-          tier,
-          briefs: itemsInTier.map(createBriefFromProduct),
-        };
-
-        const parsedOrderData = CreateOrderSchema.parse(orderData);
-        const response = await backendService.createOrder(parsedOrderData);
-
-        if (!response.success || !response.data) {
-          throw new ValidationException(
-            response.error || 'Gagal membuat pesanan',
-            { response },
-          );
-        }
-
-        orderIds.push(response.data.id);
+      if (!response.success || !response.data) {
+        throw new ValidationException(
+          response.error || 'Gagal membuat pesanan',
+          { response },
+        );
       }
+
+      orderIds.push(response.data.id);
 
       return orderIds;
     },
@@ -433,11 +420,14 @@ export const getAllOrders = async (): Promise<Order[]> => {
     async (): Promise<Order[]> => {
       const response = await backendService.getOrders();
       
-      if (!response.success || !response.data) {
+      if (!response.success) {
         return [];
       }
 
-      return response.data.map((backendOrderData: unknown): Order => {
+      // Ensure response.data is an array, fallback to empty array if null/undefined
+      const ordersData = Array.isArray(response.data) ? response.data : [];
+
+      return ordersData.map((backendOrderData: unknown): Order => {
         if (!isValidObject(backendOrderData)) {
           throw new ValidationException('Data pesanan tidak valid dari backend');
         }

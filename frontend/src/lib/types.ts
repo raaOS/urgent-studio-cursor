@@ -10,11 +10,11 @@ import { z } from 'zod';
 
 export const ProductSchema = z.object({
   id: z.string(),
-  tier: z.string(),
   name: z.string(),
   price: z.number(),
   promoPrice: z.number().optional(),
   imageUrl: z.string().optional(),
+  tier: z.string().optional(),
   // For carrying over existing brief data during editing
   instanceId: z.string().optional(),
   briefDetails: z.string().optional(),
@@ -35,7 +35,7 @@ export const BriefSchema = z.object({
   instanceId: z.string(),
   productId: z.string(),
   productName: z.string(),
-  tier: z.string(),
+  tier: z.string().optional(),
   briefDetails: z.string().min(10, { message: "Brief harus diisi minimal 10 karakter." }),
   googleDriveAssetLinks: z.string().url({ message: "URL Google Drive tidak valid." }).optional(),
   width: z.union([z.number(), z.literal('')]).optional(),
@@ -63,7 +63,7 @@ export const OrderStatusEnum = z.enum([
 
 export const OrderSchema = z.object({
     id: z.string(),
-    tier: z.string(),
+    tier: z.string().optional(),
     briefs: z.array(BriefSchema), // Briefs are now nested for type safety
     status: OrderStatusEnum,
     createdAt: z.string(), // Stored as ISO string

@@ -42,15 +42,7 @@ Customer communication:
 
 ## 📈 FASE 2: SCALE SMART (Bulan 4-6)
 
-### 💳 Tambah Midtrans (Ketika order >50/bulan):
-```
-Biaya: 2.9% per transaksi
-Benefit:
-- Auto payment confirmation
-- Multiple payment methods
-- Reduced admin workload
-- Better customer experience
-```
+
 
 ### 🤖 Tambah AI (Ketika order >100/bulan):
 ```
@@ -105,16 +97,16 @@ Sentry (FREE tier):
 ```
 - VPS: Rp 77,500/bulan
 - Domain: Rp 12,500/bulan
-- Midtrans: 2.9% dari revenue
+
 - Google AI: ~Rp 75,000/bulan (untuk 100 orders)
-- Total: Rp 165,000/bulan + 2.9% revenue
+- Total: Rp 165,000/bulan
 ```
 
 ### Bulan 6+ (Optimize):
 ```
 - VPS upgrade 4GB: Rp 155,000/bulan
 - Domain: Rp 12,500/bulan
-- Midtrans: 2.9% dari revenue
+
 - Google AI: ~Rp 150,000/bulan (untuk 200 orders)
 - CDN CloudFlare: GRATIS
 - Total: Rp 317,500/bulan + 2.9% revenue

@@ -1,4 +1,4 @@
-// Menggunakan Jest sebagai pengganti vitest karena vitest tidak tersedia
+// Menggunakan Jest sebagai testing framework
 import { describe, expect, it } from "@jest/globals";
 
 import { createOrder } from "@/services/examples/orderService";

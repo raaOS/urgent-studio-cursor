@@ -110,7 +110,7 @@ export default function CheckoutClientPage({ orderIds }: CheckoutClientPageProps
 
             return {
               id: order.id,
-              tier: order.tier,
+              tier: order.tier || 'standard',
               totalAmount: order.totalAmount,
               briefs: order.briefs.map((brief): BriefData => ({
                 instanceId: brief.instanceId,
@@ -334,7 +334,7 @@ export default function CheckoutClientPage({ orderIds }: CheckoutClientPageProps
                     <div className="space-y-1">
                       {order.briefs.map((brief, index): JSX.Element => {
                         const product = getAllProducts().find((p: ProductMaster): boolean => p.id === brief.productId);
-                        const price = product?.promoPrice ?? product?.price ?? 0;
+                        const price = product?.price ?? 0;
                         return (
                           <div key={brief.instanceId} className="flex justify-between items-center">
                             <p className="text-muted-foreground">{index + 1}. {brief.productName}</p>

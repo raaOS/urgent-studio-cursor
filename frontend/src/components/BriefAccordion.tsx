@@ -49,13 +49,6 @@ export function BriefAccordion({ form, fields, remove, openItems, setOpenItems }
     remove(index);
   };
 
-  const toggleAccordionItem = (instanceId: string): void => {
-    const newOpenItems = openItems.includes(instanceId)
-      ? openItems.filter(item => item !== instanceId)
-      : [...openItems, instanceId];
-    setOpenItems(newOpenItems);
-  };
-
   if (fields.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -72,7 +65,7 @@ export function BriefAccordion({ form, fields, remove, openItems, setOpenItems }
       value={openItems}
       onValueChange={setOpenItems}
     >
-      {fields.map((field, index) => {
+      {fields.map((field, _index) => {
         const brief = getValues(`briefs.${field.originalIndex}`);
         return (
           <AccordionItem 

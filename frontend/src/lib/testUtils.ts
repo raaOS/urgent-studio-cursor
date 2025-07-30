@@ -1,6 +1,6 @@
 /**
  * File utilitas untuk testing yang menyediakan fungsi-fungsi mock
- * tanpa ketergantungan pada vitest
+ * untuk testing dengan Jest
  */
 
 // Definisi tipe untuk respons API

@@ -1,396 +1,437 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, ArrowLeft, Home, FileText, Scaling } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
+import { Trash2, ShoppingCart } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form } from "@/components/ui/form";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { getAllProducts } from "@/lib/products";
-import type { Product } from "@/lib/types";
-import { BriefSchema } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { createMultipleOrdersFromCart } from "@/services/orderService";
 
-import { BriefAccordion } from "./BriefAccordion";
-import { Separator } from "./ui/separator";
+interface CartItem {
+  id: string;
+  productId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  category: string;
+}
 
+interface BriefData {
+  productId: string;
+  productName: string;
+  price: number;
+  quantity: number;
+  details: string;
+  dimensions: string;
+  additionalNotes?: string | undefined;
+}
 
-const briefFormSchema = z.object({
-  briefs: z.array(BriefSchema),
+interface BriefFormProps {
+  cart: CartItem[];
+}
+
+const briefSchema = z.object({
+  briefs: z.array(
+    z.object({
+      productId: z.string().min(1, "Product ID diperlukan"),
+      productName: z.string().min(1, "Nama produk diperlukan"),
+      price: z.number().min(0, "Harga harus valid"),
+      quantity: z.number().min(1, "Quantity minimal 1"),
+      details: z.string().min(10, "Detail minimal 10 karakter"),
+      dimensions: z.string().min(1, "Dimensi diperlukan"),
+      additionalNotes: z.string().optional(),
+    }),
+  ),
+  customerInfo: z.object({
+    name: z.string().min(1, "Nama diperlukan"),
+    whatsapp: z.string().min(10, "Nomor WhatsApp minimal 10 digit"),
+    email: z.string().email("Email tidak valid").optional(),
+  }),
 });
 
-export type BriefFormValues = z.infer<typeof briefFormSchema>;
+type BriefFormData = z.infer<typeof briefSchema>;
 
-export function BriefForm(): JSX.Element {
-  const router = useRouter();
+export default function BriefForm({ cart }: BriefFormProps): JSX.Element {
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const [openAccordionItemsPerTier, setOpenAccordionItemsPerTier] = useState<Record<string, string[]>>({});
 
-  const form = useForm<BriefFormValues>({
-    resolver: zodResolver(briefFormSchema),
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+    watch,
+    reset,
+    register,
+  } = useForm<BriefFormData>({
+    resolver: zodResolver(briefSchema),
     defaultValues: {
       briefs: [],
+      customerInfo: {
+        name: "",
+        whatsapp: "",
+        email: "",
+      },
     },
-    mode: 'onBlur',
   });
 
-  const { fields, remove, replace } = useFieldArray({
-    control: form.control,
-    name: "briefs"
+  const { fields, remove } = useFieldArray({
+    control,
+    name: "briefs",
   });
-  
-  const { getValues, setValue } = form;
 
-  useEffect(() => {
-    const cartFromSession = sessionStorage.getItem("globalCart");
-    if (cartFromSession !== null && cartFromSession !== '') {
-      try {
-        const cartItems: Product[] = JSON.parse(cartFromSession);
-        const newBriefs = cartItems.map((product, index) => {
-          // Konversi width dan height ke tipe yang sesuai dengan BriefSchema
-          let width: number | "" | undefined = undefined;
-          let height: number | "" | undefined = undefined;
-          
-          if (product.width === '') {
-            width = '';
-          } else if (typeof product.width === 'number') {
-            width = product.width;
-          }
-          
-          if (product.height === '') {
-            height = '';
-          } else if (typeof product.height === 'number') {
-            height = product.height;
-          }
-          
-          return {
-            instanceId: product.instanceId ?? `${product.id}-${Date.now() + index}`,
-            productId   : product.id,
-            productName: product.name,
-            tier: product.tier,
-            briefDetails: product.briefDetails ?? "",
-            googleDriveAssetLinks   : product.googleDriveAssetLinks ?? "",
-            width,
-            height,
-            unit: product.unit ?? 'px',
-          };
-        });
-        
-        replace(newBriefs);
-      } catch (error) {
-        console.error("Gagal mem-parse keranjang dari sessionStorage   : ", error);
-        toast({
-          variant: "destructive",
-          title: "Data Keranjang Tidak Valid",
-          description: "Data keranjang belanja Anda rusak.",
-        });
-      }
-    }
-  }, [replace, toast]);
-  
-  const briefsByTier = useMemo(() => {
-    return fields.reduce((acc, field, index) => {
-      const brief = getValues(`briefs.${index}`);
-      if (!acc[brief.tier]) {
-        acc[brief.tier] = [];
-      }
-      acc[brief.tier]!.push({ ...field, originalIndex: index });
-      return acc;
-    }, {} as Record<string, (typeof fields[0] & { originalIndex: number })[]>);
-  }, [fields, getValues]);
+  const watchedBriefs = watch("briefs");
 
-  const handleValidationErrors = (errors: Record<string, unknown>) => {
-    if (errors.briefs) {
-        const firstErrorKey = Object.keys(errors.briefs)[0];
-        if (firstErrorKey) {
-            const errorBriefIndex = parseInt(firstErrorKey, 10);
-            const errorBrief = getValues(`briefs.${errorBriefIndex}`);
-            if (errorBrief) {
-                const tier = errorBrief.tier;
-                const instanceId = errorBrief.instanceId;
+  useEffect((): void => {
+    if (cart.length > 0) {
+      // Initialize form with cart items
+      const initialBriefs: BriefData[] = cart.map((item) => ({
+        productId: item.productId,
+        productName: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        details: "",
+        dimensions: "",
+        additionalNotes: "",
+      }));
 
-                setOpenAccordionItemsPerTier(prev => ({
-                    ...prev,
-                    [tier]: [...new Set([...(prev[tier] ?? []), instanceId])]
-                }));
-
-                toast({
-                    variant: "destructive",
-                    title: "Form Belum Lengkap",
-                    description: "Harap periksa dan lengkapi semua brief yang wajib diisi.",
-                });
-            }
-        }
-    }
-  }
-
-  async function onSubmit(data: BriefFormValues) {
-    setIsLoading(true);
-
-    if (data.briefs.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Keranjang Kosong",
-        description: "Silakan tambahkan setidaknya satu item desain.",
+      reset({ 
+        briefs: initialBriefs,
+        customerInfo: {
+          name: "",
+          whatsapp: "",
+          email: "",
+        },
       });
-      setIsLoading(false);
-      return;
     }
+  }, [cart, reset]);
+
+  const formatPrice = (price: number): string => {
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(price);
+  };
+
+  const getTotalPrice = (): number => {
+    return watchedBriefs.reduce(
+      (total, brief) => total + brief.price * brief.quantity,
+      0,
+    );
+  };
+
+  const generateOrderCode = (): string => {
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `URS-${timestamp}-${random}`;
+  };
+
+  const generateWhatsAppMessage = (data: BriefFormData): string => {
+    const orderCode = generateOrderCode();
+    const totalPrice = getTotalPrice();
+    
+    let message = `*PESANAN DESAIN URGENT STUDIO*\n\n`;
+    message += `📋 *Kode Pesanan:* ${orderCode}\n`;
+    message += `👤 *Nama:* ${data.customerInfo.name}\n`;
+    message += `📱 *WhatsApp:* ${data.customerInfo.whatsapp}\n`;
+    if (data.customerInfo.email) {
+      message += `📧 *Email:* ${data.customerInfo.email}\n`;
+    }
+    message += `\n*DETAIL PESANAN:*\n`;
+    
+    data.briefs.forEach((brief, index) => {
+      message += `\n${index + 1}. *${brief.productName}*\n`;
+      message += `   💰 Harga: ${formatPrice(brief.price)}\n`;
+      message += `   📦 Quantity: ${brief.quantity}x\n`;
+      message += `   📝 Detail: ${brief.details}\n`;
+      message += `   📐 Dimensi: ${brief.dimensions}\n`;
+      if (brief.additionalNotes) {
+        message += `   📌 Catatan: ${brief.additionalNotes}\n`;
+      }
+      message += `   💵 Subtotal: ${formatPrice(brief.price * brief.quantity)}\n`;
+    });
+    
+    message += `\n💰 *TOTAL PEMBAYARAN: ${formatPrice(totalPrice)}*\n\n`;
+    message += `Mohon konfirmasi pesanan ini. Terima kasih! 🙏`;
+    
+    return encodeURIComponent(message);
+  };
+
+  const onSubmit = async (data: BriefFormData): Promise<void> => {
+    setIsSubmitting(true);
 
     try {
-        const cartForService: Product[] = data.briefs.map(b => {
-            const productInfo = getAllProducts().find(p => p.id === b.productId);
-            return {
-                id: b.productId,
-                name: b.productName,
-                tier: b.tier,
-                price: productInfo?.price ?? 0,
-                promoPrice    : productInfo?.promoPrice,
-                instanceId: b.instanceId,
-                briefDetails: b.briefDetails,
-                googleDriveAssetLinks: b.googleDriveAssetLinks,
-                width: b.width,
-                height: b.height,
-                unit: b.unit,
-            };
-        });
-        
-        const newOrderIds = await createMultipleOrdersFromCart(cartForService);
+      // Generate WhatsApp message
+      const whatsappMessage = generateWhatsAppMessage(data);
+      const whatsappNumber = "6288224785326"; // Replace with actual WhatsApp number
+      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
 
-        toast({
-          title: "Pesanan Berhasil Dibuat!",
-          description: `Mengarahkan ke halaman checkout...`,
-        });
-        
-        router.push(`/checkout/summary?orderIds=${newOrderIds.join(',')}`);
+      toast({
+        title: "Pesanan berhasil dibuat",
+        description: "Anda akan diarahkan ke WhatsApp untuk konfirmasi",
+      });
+
+      // Redirect to WhatsApp
+      setTimeout(() => {
+        window.open(whatsappUrl, '_blank');
+      }, 1000);
 
     } catch (error) {
-      console.error("Gagal menyimpan pesanan   : ", error);
+      console.error("Error creating order:", error);
       toast({
         variant: "destructive",
-        title: "Gagal Menyimpan Pesanan",
-        description: "Terjadi kesalahan saat menyimpan pesanan Anda. Silakan coba lagi.",
+        title: "Error",
+        description: "Gagal membuat pesanan. Silakan coba lagi.",
       });
-      setIsLoading(false);
+    } finally {
+      setIsSubmitting(false);
     }
-  }
-  
-  const handleOpenProductDialog = (): void => {
-    const currentBriefs = getValues('briefs').map(brief => {
-        const productInfo = getAllProducts().find(p => p.id === brief.productId);
-        return {
-          id: brief.productId,
-          name: brief.productName,
-          tier: brief.tier,
-          price: productInfo?.price ?? 0,
-          promoPrice    : productInfo?.promoPrice,
-          imageUrl: productInfo?.imageUrl,
-          instanceId    : brief.instanceId,
-          briefDetails: brief.briefDetails,
-          googleDriveAssetLinks: brief.googleDriveAssetLinks,
-          width: brief.width,
-          height: brief.height,
-          unit: brief.unit,
-        };
-    });
-    sessionStorage.setItem("globalCart", JSON.stringify(currentBriefs));
-    router.push('/'); 
-  };
-  
-  const handleApplyTemplateToTier = (tier: string, type: 'details' | 'dimensions') => {
-        const allBriefs = getValues('briefs');
-        const tierBriefs = allBriefs.filter(b => b.tier === tier);
-
-        if (tierBriefs.length < 2) {
-             toast({
-                title: "Tidak Cukup Item",
-                description: `Perlu minimal 2 item di tier ini untuk menyalin data.`,
-            });
-            return;
-        }
-
-        const sourceBrief = tierBriefs[0];
-        if (!sourceBrief) {
-            toast({
-                variant: 'destructive',
-                title: "Error",
-                description: "Tidak dapat menemukan item pertama di tier ini.",
-            });
-            return;
-        }
-
-        if (type === 'details' && !sourceBrief.briefDetails) {
-            toast({
-                variant: 'destructive',
-                title: "Brief Pertama Kosong",
-                description: "Isi detail brief pada item pertama untuk dapat menyalinnya.",
-            });
-            return;
-        }
-
-        if (type === 'dimensions' && (!sourceBrief.width || !sourceBrief.height || String(sourceBrief.width) === '' || String(sourceBrief.height) === '')) {
-            toast({
-                variant : 'destructive',
-                title: "Ukuran Pertama Tidak Lengkap",
-                description: "Isi lebar dan tinggi pada item pertama untuk dapat menyalinnya.",
-            });
-            return;
-        }
-        
-        let copiedCount = 0;
-        allBriefs.forEach((brief, idx) => {
-            if (brief.tier !== tier || brief.instanceId === sourceBrief.instanceId) {return;}
-
-            if (type === 'details') {
-                setValue(`briefs.${idx}.briefDetails`, sourceBrief.briefDetails);
-                setValue(`briefs.${idx}.googleDriveAssetLinks`, sourceBrief.googleDriveAssetLinks);
-            } else if (type === 'dimensions') {
-                setValue(`briefs.${idx}.width`, sourceBrief.width);
-                setValue(`briefs.${idx}.height`, sourceBrief.height);
-                setValue(`briefs.${idx}.unit`, sourceBrief.unit);
-            }
-            copiedCount++;
-        });
-
-        if (copiedCount > 0) {
-            toast({
-                title : "Berhasil Disalin!",
-                description: `Data dari item pertama telah disalin ke ${copiedCount} item lain di tier ini.`,
-            });
-        }
   };
 
-  if (fields.length === 0 && !isLoading) {
+  if (cart.length === 0) {
     return (
-        <div className="flex min-h-screen w-full flex-col bg-background">
-            <header className="bg-background border-b-2 border-foreground">
-                <div className="container flex h-16 items-center justify-end" />
-            </header>
-            <main className="flex-1 flex items-center justify-center p-4">
-                <Card className="max-w-xl mx-auto border-2 border-foreground shadow-neo text-center">
-                    <CardHeader>
-                        <CardTitle className="text-2xl font-bold tracking-tighter">Keranjang Anda Kosong</CardTitle>
-                        <CardDescription>
-                            Sepertinya Anda belum memilih produk apapun.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Button asChild className="w-full h-11 text-base font-bold border-2 border-foreground bg-primary text-primary-foreground hover:bg-primary/90 shadow-neo hover:shadow-neo-hover active:shadow-neo-sm transition-all">
-                          <Link href="/">
-                            <Home className="mr-2"/> Kembali ke Beranda
-                          </Link>
-                        </Button>
-                    </CardContent>
-                </Card>
-            </main>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <Card className="w-full max-w-md border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+          <CardHeader className="text-center">
+            <div className="text-6xl mb-4">🛒</div>
+            <CardTitle>Keranjang Kosong</CardTitle>
+            <CardDescription>
+              Anda belum memiliki produk di keranjang. Silakan pilih produk
+              terlebih dahulu.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <Button 
+              className="border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all duration-150" 
+              onClick={() => { window.location.href = "/products"; }}
+            >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Lihat Produk
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
-  
-  return (
-    <>
-     <div className="flex min-h-screen w-full flex-col bg-background">
-        <header className="bg-background border-b-2 border-foreground">
-              <div className="container flex h-16 items-center justify-between">
-                  <div/>
-                  <Button asChild variant="outline" className="font-bold border-2 border-foreground">
-                    <Link href="/">
-                      <ArrowLeft className="mr-2 h-5 w-5" />
-                      Kembali & Ubah Pilihan
-                    </Link>
-                  </Button>
-              </div>
-        </header>
-        <main className="flex-1 py-16 sm:py-24">
-            <div className="container mx-auto px-4 max-w-3xl">
-                <Card className="border-2 border-foreground shadow-neo">
-                    <CardHeader className="text-center">
-                    <CardTitle className="text-3xl font-bold tracking-tighter">
-                        Isi Brief Desain Anda
-                    </CardTitle>
-                    <CardDescription>
-                        Pastikan semua brief diisi dengan jelas sebelum melanjutkan.
-                    </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                    <Form {...form}>
-                        <form onSubmit={form.handleSubmit(onSubmit, handleValidationErrors)} className="space-y-6">
-                            
-                            {Object.entries(briefsByTier).map(([tier, briefs], tierIndex) => (
-                                <div key={tier}>
-                                    {tierIndex > 0 && <Separator className="my-8 border-dashed border-foreground/50"/>}
-                                    <div className="text-center mb-2">
-                                        <h2 className="text-xl font-bold tracking-tight">{tier}</h2>
-                                        <p className="text-sm text-muted-foreground">({briefs.length} item)</p>
-                                    </div>
-                                     <div className="flex flex-col sm:flex-row items-center justify-center gap-2 mb-4 w-full">
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8 text-xs border-2 border-foreground bg-background w-full sm:w-auto overflow-hidden"
-                                            onClick={() => handleApplyTemplateToTier(tier, 'details')}
-                                            title={"Salin Detail & Aset dari item pertama ke semua item di tier ini"}
-                                        >
-                                            <FileText className="h-3 w-3 text-primary mr-1.5" />
-                                            <span className="overflow-hidden text-ellipsis">Salin Detail ke Semua</span>
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8 text-xs border-2 border-foreground bg-[#ff9900] text-white w-full sm:w-auto hover:bg-[#ff9900]/90 focus:outline-none overflow-hidden"
-                                            onClick={() => handleApplyTemplateToTier(tier, 'dimensions')}
-                                            title={"Salin Ukuran dari item pertama ke semua item di tier ini"}
-                                        >
-                                            <Scaling className="h-3 w-3 text-white mr-1.5" />
-                                            <span className="overflow-hidden text-ellipsis">Salin Ukuran ke Semua</span>
-                                        </Button>
-                                    </div>
 
-                                    <BriefAccordion
-                                        form={form}
-                                        fields={briefs}
-                                        remove={remove}
-                                        openItems={openAccordionItemsPerTier[tier] || []}
-                                        setOpenItems={(items) => setOpenAccordionItemsPerTier(prev => ({...prev, [tier]: items}))}
-                                    />
-                                </div>
-                            ))}
-                            <div className="flex flex-row items-center gap-3 pt-4">
-                                <Button 
-                                    type="button" 
-                                    variant="outline"
-                                    onClick={handleOpenProductDialog}
-                                    className="h-12 text-base font-bold border-2 border-foreground w-full bg-[#ffe502] text-foreground hover:bg-[#ffe502]/90 overflow-hidden">
-                                    <span className="overflow-hidden text-ellipsis">+desain</span>
-                                </Button>
-                                <Button 
-                                    type="submit" 
-                                    disabled={isLoading || fields.length === 0} 
-                                    className={cn(
-                                        "w-full h-12 text-base font-bold border-2 border-foreground hover:shadow-neo-hover active:shadow-neo-sm transition-all disabled:bg-muted disabled:shadow-none disabled:text-muted-foreground disabled:cursor-not-allowed overflow-hidden",
-                                        isLoading ? "bg-primary text-primary-foreground"  : "bg-accent text-accent-foreground hover:bg-accent/90"
-                                    )}>
-                                {isLoading ? <Loader2 className="animate-spin" />  : <span className="overflow-hidden text-ellipsis">Lanjutkan</span>}
-                                </Button>
-                            </div>
-                        </form>
-                    </Form>
-                    </CardContent>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Form Brief Design
+            </h1>
+            <p className="text-gray-600">
+              Lengkapi detail untuk setiap design yang Anda pesan
+            </p>
+          </div>
+
+          {/* Summary Card */}
+          <Card className="mb-8 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5" />
+                Ringkasan Pesanan
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 mb-4">
+                {cart.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center">
+                    <span>{item.name}</span>
+                    <span className="font-medium">
+                      {item.quantity}x {formatPrice(item.price)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <Separator />
+              <div className="flex justify-between items-center mt-4">
+                <span className="text-lg font-semibold">Total:</span>
+                <span className="text-2xl font-bold text-blue-600">
+                  {formatPrice(getTotalPrice())}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Brief Form */}
+          <form onSubmit={handleSubmit(onSubmit)}>
+            {/* Customer Information */}
+            <Card className="mb-8 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              <CardHeader>
+                <CardTitle>Informasi Pemesan</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="customerInfo.name">
+                    Nama Lengkap <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="customerInfo.name"
+                    placeholder="Masukkan nama lengkap Anda"
+                    {...register("customerInfo.name")}
+                    className="mt-1 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  />
+                  {errors.customerInfo?.name && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.customerInfo.name.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="customerInfo.whatsapp">
+                    Nomor WhatsApp <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="customerInfo.whatsapp"
+                    placeholder="Contoh: 081234567890"
+                    {...register("customerInfo.whatsapp")}
+                    className="mt-1 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  />
+                  {errors.customerInfo?.whatsapp && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.customerInfo.whatsapp.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="customerInfo.email">
+                    Email (Opsional)
+                  </Label>
+                  <Input
+                    id="customerInfo.email"
+                    type="email"
+                    placeholder="email@example.com"
+                    {...register("customerInfo.email")}
+                    className="mt-1 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  />
+                  {errors.customerInfo?.email && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.customerInfo.email.message}
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Product Briefs */}
+            <div className="space-y-6">
+              {fields.map((field, index) => (
+                <Card key={field.id} className="border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">
+                          {field.productName}
+                        </CardTitle>
+                        <CardDescription>
+                          {formatPrice(field.price)} x {field.quantity}
+                        </CardDescription>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all duration-150"
+                        onClick={() => remove(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label htmlFor={`briefs.${index}.details`}>
+                        Detail Design <span className="text-red-500">*</span>
+                      </Label>
+                      <Textarea
+                        id={`briefs.${index}.details`}
+                        placeholder="Jelaskan detail design yang Anda inginkan..."
+                        {...register(`briefs.${index}.details`)}
+                        className="mt-1 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                      />
+                      {errors.briefs?.[index]?.details && (
+                        <p className="text-red-500 text-sm mt-1">
+                          {errors.briefs[index]?.details?.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor={`briefs.${index}.dimensions`}>
+                        Dimensi/Ukuran <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`briefs.${index}.dimensions`}
+                        placeholder="Contoh: 1080x1080px, A4, 21x29.7cm"
+                        {...register(`briefs.${index}.dimensions`)}
+                        className="mt-1 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                      />
+                      {errors.briefs?.[index]?.dimensions && (
+                        <p className="text-red-500 text-sm mt-1">
+                          {errors.briefs[index]?.dimensions?.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor={`briefs.${index}.additionalNotes`}>
+                        Catatan Tambahan
+                      </Label>
+                      <Textarea
+                        id={`briefs.${index}.additionalNotes`}
+                        placeholder="Catatan tambahan, referensi, atau permintaan khusus..."
+                        {...register(`briefs.${index}.additionalNotes`)}
+                        className="mt-1 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                      />
+                    </div>
+                  </CardContent>
                 </Card>
+              ))}
             </div>
-        </main>
+
+            {/* Submit Button */}
+            <div className="mt-8 text-center">
+              <Button
+                type="submit"
+                size="lg"
+                disabled={isSubmitting || fields.length === 0}
+                className="min-w-48 border-black border shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all duration-150"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Memproses...
+                  </>
+                ) : (
+                  <>
+                    📱 Kirim ke WhatsApp
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
-    </>
+    </div>
   );
 }

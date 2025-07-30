@@ -1,19 +1,34 @@
 
-import { Suspense } from 'react';
+'use client';
 
-import { OrderTracker } from '@/components/OrderTracker';
+import React from 'react';
+import RealTimeOrderTracking from '@/components/RealTimeOrderTracking';
+import { Container, Typography } from '@/components/ui/visual-consistency';
+import { StaggerContainer } from '@/components/ui/micro-interactions';
 
-export default async function TrackPage({ searchParams }: { searchParams?: Promise<{ orderId?: string }> }): Promise<JSX.Element> {
-  const resolvedSearchParams = await searchParams;
-  const orderId = resolvedSearchParams?.orderId ?? '';
-
+export default function TrackOrderPage(): JSX.Element {
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      <main className="flex-1">
-        <Suspense fallback={<div className="container mx-auto max-w-xl py-12 px-4 text-center">Memuat pelacak...</div>}>
-            <OrderTracker orderId={orderId} />
-        </Suspense>
-      </main>
+    <div className="min-h-screen bg-background">
+      <Container className="py-6 sm:py-8 px-4 sm:px-6">
+        <StaggerContainer>
+          <div className="mb-6 sm:mb-8 text-center">
+            <Typography 
+              variant="h1" 
+              className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground mb-3 sm:mb-4"
+            >
+              🔍 Lacak Pesanan
+            </Typography>
+            <Typography 
+              variant="body" 
+              className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto px-4"
+            >
+              Pantau status pesanan Anda secara real-time dengan sistem tracking terdepan
+            </Typography>
+          </div>
+          
+          <RealTimeOrderTracking />
+        </StaggerContainer>
+      </Container>
     </div>
   );
 }

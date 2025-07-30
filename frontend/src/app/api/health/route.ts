@@ -108,7 +108,7 @@ async function checkDatabase(): Promise<HealthCheckResult> {
 async function checkExternalServices(): Promise<ExternalServicesResult> {
   const services = {
     ai: process.env.GOOGLE_API_KEY ? 'enabled'  : 'disabled',
-    payment: process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ? 'enabled'  : 'disabled',
+    payment: 'manual',
     telegram: process.env.TELEGRAM_BOT_TOKEN ? 'enabled'  : 'disabled'
   };
 

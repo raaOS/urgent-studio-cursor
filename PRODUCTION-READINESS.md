@@ -64,7 +64,7 @@
 - [ ] **AI image processing** - For smart image optimization
 
 ### 💳 Payment Gateway (OPTIONAL)
-- [ ] **Midtrans integration** - Only if you want automated payments
+
 - [ ] **Payment webhooks** - For automatic payment confirmation
 - [ ] **Alternative: Manual payment** - WhatsApp/Bank transfer confirmation
 
@@ -142,7 +142,7 @@
 - ✅ **Email notifications** - Instead of Telegram bot (FREE)
 
 ### 📈 Scale When Ready
-- 🔄 **Add Midtrans** - When order volume increases (2.9% fee)
+
 - 🔄 **Add AI** - When you need automation (Pay per use)
 - 🔄 **Add Telegram** - When you want automation (FREE)
 

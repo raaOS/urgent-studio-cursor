@@ -3,7 +3,7 @@
 import { z } from 'zod';
 
 import { tryCatch } from './errorHandler';
-import { api, ApiResponse } from './httpClient';
+import { httpClient, ApiResponse } from './httpClient';
 
 // Constants
 const API_ENDPOINTS = {
@@ -79,14 +79,14 @@ const createErrorResponse = <T>(
 /**
  * Validates string parameter
  */
-const validateStringParam = (value: string, paramName: string): boolean => {
+const validateStringParam = (value: string, _paramName: string): boolean => {
   return typeof value === 'string' && value.length > 0;
 };
 
 /**
  * Validates object parameter
  */
-const validateObjectParam = (value: unknown, paramName: string): boolean => {
+const validateObjectParam = (value: unknown, _paramName: string): boolean => {
   return value !== null && value !== undefined && typeof value === 'object';
 };
 
@@ -136,7 +136,7 @@ class BackendService {
    */
   async ping(): Promise<ApiResponse<PingResponse>> {
     return tryCatch<ApiResponse<PingResponse>, ApiResponse<PingResponse>>(
-      async () => api.get<PingResponse>(API_ENDPOINTS.PING),
+      async () => httpClient.get<PingResponse>(API_ENDPOINTS.PING),
       (error) => {
         console.error('Ping failed:', error);
         return createErrorResponse(
@@ -156,7 +156,7 @@ class BackendService {
   async getOrders(): Promise<ApiResponse<BackendOrder[]>> {
     return tryCatch<ApiResponse<BackendOrder[]>, ApiResponse<BackendOrder[]>>(
       async () => {
-        const response = await api.get<BackendOrder[]>(API_ENDPOINTS.ORDERS);
+        const response = await httpClient.get<BackendOrder[]>(API_ENDPOINTS.ORDERS);
 
         if (response.success && response.data) {
           validateOrderData(response.data);
@@ -185,7 +185,7 @@ class BackendService {
 
     return tryCatch<ApiResponse<BackendOrder>, ApiResponse<BackendOrder>>(
       async () => {
-        const response = await api.get<BackendOrder>(`${API_ENDPOINTS.ORDERS}/${id}`);
+        const response = await httpClient.get<BackendOrder>(`${API_ENDPOINTS.ORDERS}/${id}`);
 
         if (response.success && response.data) {
           validateSingleOrderData(response.data);
@@ -209,7 +209,7 @@ class BackendService {
    */
   async createOrder(orderData: Partial<BackendOrder>): Promise<ApiResponse<BackendOrder>> {
     return tryCatch<ApiResponse<BackendOrder>, ApiResponse<BackendOrder>>(
-      async () => api.post<BackendOrder>(API_ENDPOINTS.ORDERS, orderData),
+      async () => httpClient.post<BackendOrder>(API_ENDPOINTS.ORDERS, orderData),
       (error) => {
         console.error('Create order failed:', error);
         return createErrorResponse(
@@ -244,7 +244,7 @@ class BackendService {
     const updateData: OrderStatusUpdate = { status };
 
     return tryCatch<ApiResponse<BackendOrder>, ApiResponse<BackendOrder>>(
-      async () => api.put<BackendOrder>(`${API_ENDPOINTS.ORDERS}/${id}/status`, updateData),
+      async () => httpClient.put<BackendOrder>(`${API_ENDPOINTS.ORDERS}/${id}/status`, updateData),
       (error) => {
         console.error(`Update order status ${id} failed:`, error);
         return createErrorResponse(
@@ -280,7 +280,7 @@ class BackendService {
     }
 
     return tryCatch<ApiResponse<BackendOrder>, ApiResponse<BackendOrder>>(
-      async () => api.put<BackendOrder>(`${API_ENDPOINTS.ORDERS}/${id}`, customerData),
+      async () => httpClient.put<BackendOrder>(`${API_ENDPOINTS.ORDERS}/${id}`, customerData),
       (error) => {
         console.error(`Update customer info ${id} failed:`, error);
         return createErrorResponse(
@@ -305,7 +305,7 @@ class BackendService {
     }
 
     return tryCatch<ApiResponse<{ message: string }>, ApiResponse<{ message: string }>>(
-      async () => api.delete<{ message: string }>(`${API_ENDPOINTS.ORDERS}/${id}`),
+      async () => httpClient.delete<{ message: string }>(`${API_ENDPOINTS.ORDERS}/${id}`),
       (error) => {
         console.error(`Delete order ${id} failed:`, error);
         return createErrorResponse(
@@ -324,7 +324,7 @@ class BackendService {
    */
   async getSettings(): Promise<ApiResponse<Record<string, unknown>>> {
     return tryCatch<ApiResponse<Record<string, unknown>>, ApiResponse<Record<string, unknown>>>(
-      async () => api.get<Record<string, unknown>>(API_ENDPOINTS.SETTINGS),
+      async () => httpClient.get<Record<string, unknown>>(API_ENDPOINTS.SETTINGS),
       (error) => {
         console.error('Get settings failed:', error);
         return createErrorResponse(
@@ -351,7 +351,7 @@ class BackendService {
     }
 
     return tryCatch<ApiResponse<Record<string, unknown>>, ApiResponse<Record<string, unknown>>>(
-      async () => api.put<Record<string, unknown>>(API_ENDPOINTS.SETTINGS, settings),
+      async () => httpClient.put<Record<string, unknown>>(API_ENDPOINTS.SETTINGS, settings),
       (error) => {
         console.error('Update settings failed:', error);
         return createErrorResponse(
@@ -371,7 +371,7 @@ class BackendService {
   async getLogs(): Promise<ApiResponse<BackendLog[]>> {
     return tryCatch<ApiResponse<BackendLog[]>, ApiResponse<BackendLog[]>>(
       async () => {
-        const response = await api.get<BackendLog[]>(API_ENDPOINTS.LOGS);
+        const response = await httpClient.get<BackendLog[]>(API_ENDPOINTS.LOGS);
 
         if (response.success && response.data) {
           validateLogData(response.data);
@@ -403,7 +403,7 @@ class BackendService {
     }
 
     return tryCatch<ApiResponse<BackendLog>, ApiResponse<BackendLog>>(
-      async () => api.post<BackendLog>(API_ENDPOINTS.LOGS, logData),
+      async () => httpClient.post<BackendLog>(API_ENDPOINTS.LOGS, logData),
       (error) => {
         console.error('Create log failed:', error);
         return createErrorResponse(

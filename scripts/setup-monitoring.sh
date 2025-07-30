@@ -1,46 +1,48 @@
 #!/bin/bash
 
-# Performance Monitoring Setup Script
-# This script sets up performance monitoring for production
+# 📊 MONITORING & LOGGING SETUP - URGENT STUDIO
+# Script untuk setup monitoring dan logging di production
 
 set -e
 
-echo "🚀 Setting up Performance Monitoring..."
+echo "📊 SETTING UP MONITORING & LOGGING - URGENT STUDIO"
+echo "=================================================="
 
-# Colors for output
+# Configuration
+MONITORING_DIR="/opt/monitoring"
+LOG_DIR="/var/log/urgent-studio"
+GRAFANA_PORT="3001"
+PROMETHEUS_PORT="9090"
+
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Function to print colored output
-print_status() {
+log_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-print_error() {
+log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   print_error "This script should not be run as root for security reasons"
-   exit 1
-fi
+# Step 1: Create directories
+log_info "Step 1: Creating monitoring directories..."
+sudo mkdir -p $MONITORING_DIR
+sudo mkdir -p $LOG_DIR
+sudo mkdir -p $MONITORING_DIR/prometheus
+sudo mkdir -p $MONITORING_DIR/grafana
+sudo mkdir -p $MONITORING_DIR/alertmanager
 
-# Create monitoring directory
-MONITOR_DIR="monitoring"
-mkdir -p $MONITOR_DIR
-
-print_status "Creating performance monitoring configuration..."
-
-# Create Prometheus configuration
-cat > $MONITOR_DIR/prometheus.yml << 'EOF'
+# Step 2: Setup Prometheus configuration
+log_info "Step 2: Setting up Prometheus..."
+sudo tee $MONITORING_DIR/prometheus/prometheus.yml > /dev/null <<EOF
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -48,170 +50,76 @@ global:
 rule_files:
   - "alert_rules.yml"
 
-scrape_configs:
-  - job_name: 'urgent-studio-frontend'
-    static_configs:
-      - targets: ['frontend:3000']
-    metrics_path: '/api/metrics'
-    scrape_interval: 30s
-
-  - job_name: 'urgent-studio-backend'
-    static_configs:
-      - targets: ['backend:8080']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  - job_name: 'nginx'
-    static_configs:
-      - targets: ['nginx:80']
-    metrics_path: '/nginx_status'
-    scrape_interval: 30s
-
-  - job_name: 'postgres'
-    static_configs:
-      - targets: ['postgres:5432']
-    scrape_interval: 60s
-
 alerting:
   alertmanagers:
     - static_configs:
         - targets:
           - alertmanager:9093
+
+scrape_configs:
+  - job_name: 'urgent-studio-backend'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['localhost:9113']
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['localhost:9187']
 EOF
 
-# Create alert rules
-cat > $MONITOR_DIR/alert_rules.yml << 'EOF'
-groups:
-  - name: urgent-studio-alerts
-    rules:
-      - alert: HighResponseTime
-        expr: http_request_duration_seconds{quantile="0.95"} > 2
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High response time detected"
-          description: "95th percentile response time is {{ $value }}s"
+# Step 3: Setup Grafana provisioning
+log_info "Step 3: Setting up Grafana..."
+sudo mkdir -p $MONITORING_DIR/grafana/provisioning/datasources
+sudo mkdir -p $MONITORING_DIR/grafana/provisioning/dashboards
 
-      - alert: HighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "High error rate detected"
-          description: "Error rate is {{ $value }} errors per second"
+sudo tee $MONITORING_DIR/grafana/provisioning/datasources/prometheus.yml > /dev/null <<EOF
+apiVersion: 1
 
-      - alert: DatabaseConnectionFailure
-        expr: up{job="postgres"} == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Database connection failure"
-          description: "PostgreSQL database is down"
-
-      - alert: HighMemoryUsage
-        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High memory usage"
-          description: "Memory usage is above 90%"
-
-      - alert: HighCPUUsage
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High CPU usage"
-          description: "CPU usage is above 80%"
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
 EOF
 
-# Create Grafana dashboard configuration
-cat > $MONITOR_DIR/grafana-dashboard.json << 'EOF'
-{
-  "dashboard": {
-    "id": null,
-    "title": "Urgent Studio Performance Dashboard",
-    "tags": ["urgent-studio"],
-    "timezone": "browser",
-    "panels": [
-      {
-        "id": 1,
-        "title": "Response Time",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "http_request_duration_seconds{quantile=\"0.95\"}",
-            "legendFormat": "95th percentile"
-          }
-        ],
-        "yAxes": [
-          {
-            "label": "Seconds",
-            "min": 0
-          }
-        ]
-      },
-      {
-        "id": 2,
-        "title": "Request Rate",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "rate(http_requests_total[5m])",
-            "legendFormat": "Requests per second"
-          }
-        ]
-      },
-      {
-        "id": 3,
-        "title": "Error Rate",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
-            "legendFormat": "5xx errors per second"
-          }
-        ]
-      },
-      {
-        "id": 4,
-        "title": "Memory Usage",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
-            "legendFormat": "Memory usage %"
-          }
-        ]
-      }
-    ],
-    "time": {
-      "from": "now-1h",
-      "to": "now"
-    },
-    "refresh": "30s"
-  }
-}
+sudo tee $MONITORING_DIR/grafana/provisioning/dashboards/dashboard.yml > /dev/null <<EOF
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
 EOF
 
-# Create monitoring docker-compose
-cat > $MONITOR_DIR/docker-compose.monitoring.yml << 'EOF'
+# Step 4: Create Docker Compose for monitoring
+log_info "Step 4: Creating monitoring Docker Compose..."
+sudo tee $MONITORING_DIR/docker-compose.monitoring.yml > /dev/null <<EOF
 version: '3.8'
 
 services:
   prometheus:
     image: prom/prometheus:latest
-    container_name: urgent-studio-prometheus
+    container_name: prometheus
     ports:
-      - "9090:9090"
+      - "$PROMETHEUS_PORT:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -220,193 +128,211 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
-    networks:
-      - monitoring
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
-    container_name: urgent-studio-grafana
+    container_name: grafana
     ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - "$GRAFANA_PORT:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-    networks:
-      - monitoring
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=urgent-studio-admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
 
-  alertmanager:
-    image: prom/alertmanager:latest
-    container_name: urgent-studio-alertmanager
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
     ports:
-      - "9093:9093"
+      - "9100:9100"
     volumes:
-      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
-    networks:
-      - monitoring
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx-exporter
+    ports:
+      - "9113:9113"
+    command:
+      - '-nginx.scrape-uri=http://localhost/nginx_status'
+    restart: unless-stopped
 
 volumes:
   prometheus_data:
   grafana_data:
-
-networks:
-  monitoring:
-    driver: bridge
 EOF
 
-# Create alertmanager configuration
-cat > $MONITOR_DIR/alertmanager.yml << 'EOF'
-global:
-  smtp_smarthost: 'localhost:587'
-  smtp_from: 'alerts@urgent-studio.com'
-
-route:
-  group_by: ['alertname']
-  group_wait: 10s
-  group_interval: 10s
-  repeat_interval: 1h
-  receiver: 'web.hook'
-
-receivers:
-  - name: 'web.hook'
-    webhook_configs:
-      - url: 'http://localhost:5001/'
-        send_resolved: true
-
-inhibit_rules:
-  - source_match:
-      severity: 'critical'
-    target_match:
-      severity: 'warning'
-    equal: ['alertname', 'dev', 'instance']
-EOF
-
-# Create performance monitoring script
-cat > $MONITOR_DIR/monitor.sh << 'EOF'
-#!/bin/bash
-
-# Performance monitoring script
-echo "🔍 Starting performance monitoring..."
-
-# Function to check service health
-check_service() {
-    local service_name=$1
-    local url=$2
-    local expected_status=${3:-200}
-    
-    echo "Checking $service_name..."
-    
-    response=$(curl -s -o /dev/null -w "%{http_code},%{time_total}" "$url" 2>/dev/null)
-    
-    if [ $? -eq 0 ]; then
-        status_code=$(echo $response | cut -d',' -f1)
-        response_time=$(echo $response | cut -d',' -f2)
-        
-        if [ "$status_code" = "$expected_status" ]; then
-            echo "✅ $service_name: OK (${response_time}s)"
-        else
-            echo "❌ $service_name: HTTP $status_code (${response_time}s)"
-        fi
-    else
-        echo "❌ $service_name: Connection failed"
-    fi
+# Step 5: Setup log rotation
+log_info "Step 5: Setting up log rotation..."
+sudo tee /etc/logrotate.d/urgent-studio > /dev/null <<EOF
+$LOG_DIR/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 0644 deploy deploy
+    postrotate
+        systemctl reload urgent-studio-backend || true
+    endscript
 }
-
-# Check all services
-check_service "Frontend" "http://localhost:3000/api/health"
-check_service "Backend" "http://localhost:8080/health"
-check_service "Nginx" "http://localhost/health"
-
-# Check system resources
-echo ""
-echo "📊 System Resources:"
-echo "Memory: $(free -h | awk '/^Mem:/ {print $3 "/" $2}')"
-echo "CPU: $(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)%"
-echo "Disk: $(df -h / | awk 'NR==2 {print $3 "/" $2 " (" $5 " used)"}')"
-
-# Check Docker containers
-echo ""
-echo "🐳 Docker Containers:"
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep urgent-studio
-
-echo ""
-echo "✅ Monitoring check completed at $(date)"
 EOF
 
-chmod +x $MONITOR_DIR/monitor.sh
+# Step 6: Create systemd service for monitoring
+log_info "Step 6: Creating monitoring systemd service..."
+sudo tee /etc/systemd/system/urgent-studio-monitoring.service > /dev/null <<EOF
+[Unit]
+Description=Urgent Studio Monitoring Stack
+Requires=docker.service
+After=docker.service
 
-# Create performance test script
-cat > $MONITOR_DIR/performance-test.sh << 'EOF'
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=$MONITORING_DIR
+ExecStart=/usr/bin/docker-compose -f docker-compose.monitoring.yml up -d
+ExecStop=/usr/bin/docker-compose -f docker-compose.monitoring.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Step 7: Setup alerting rules
+log_info "Step 7: Setting up alerting rules..."
+sudo tee $MONITORING_DIR/prometheus/alert_rules.yml > /dev/null <<EOF
+groups:
+  - name: urgent-studio-alerts
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for more than 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% for more than 5 minutes"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is below 10%"
+
+      - alert: ServiceDown
+        expr: up{job="urgent-studio-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Urgent Studio Backend is down"
+          description: "The backend service has been down for more than 1 minute"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time"
+          description: "95th percentile response time is above 1 second"
+EOF
+
+# Step 8: Start monitoring services
+log_info "Step 8: Starting monitoring services..."
+cd $MONITORING_DIR
+sudo docker-compose -f docker-compose.monitoring.yml up -d
+
+# Enable and start systemd service
+sudo systemctl daemon-reload
+sudo systemctl enable urgent-studio-monitoring
+sudo systemctl start urgent-studio-monitoring
+
+# Step 9: Setup backup monitoring
+log_info "Step 9: Setting up backup monitoring..."
+sudo tee /usr/local/bin/backup-monitoring.sh > /dev/null <<'EOF'
 #!/bin/bash
 
-# Performance testing script using Apache Bench
-echo "🚀 Running performance tests..."
+BACKUP_DIR="/var/backups/urgent-studio"
+DATE=$(date +%Y%m%d_%H%M%S)
 
-# Test frontend
-echo "Testing Frontend..."
-ab -n 100 -c 10 http://localhost:3000/ > frontend-perf.txt 2>&1
+# Create backup directory
+mkdir -p $BACKUP_DIR
 
-# Test API endpoints
-echo "Testing API endpoints..."
-ab -n 50 -c 5 http://localhost:3000/api/health > api-health-perf.txt 2>&1
+# Backup Grafana dashboards
+docker exec grafana grafana-cli admin export-dashboard > $BACKUP_DIR/grafana-dashboards-$DATE.json
 
-# Test backend
-echo "Testing Backend..."
-ab -n 50 -c 5 http://localhost:8080/health > backend-perf.txt 2>&1
+# Backup Prometheus data
+docker exec prometheus tar -czf - /prometheus > $BACKUP_DIR/prometheus-data-$DATE.tar.gz
 
-echo "📊 Performance test results:"
-echo "Frontend average response time: $(grep 'Time per request' frontend-perf.txt | head -1 | awk '{print $4}') ms"
-echo "API health average response time: $(grep 'Time per request' api-health-perf.txt | head -1 | awk '{print $4}') ms"
-echo "Backend average response time: $(grep 'Time per request' backend-perf.txt | head -1 | awk '{print $4}') ms"
+# Cleanup old backups (keep last 7 days)
+find $BACKUP_DIR -name "*.json" -mtime +7 -delete
+find $BACKUP_DIR -name "*.tar.gz" -mtime +7 -delete
 
-echo "✅ Performance tests completed"
+echo "Monitoring backup completed: $DATE"
 EOF
 
-chmod +x $MONITOR_DIR/performance-test.sh
+sudo chmod +x /usr/local/bin/backup-monitoring.sh
 
-# Create monitoring startup script
-cat > $MONITOR_DIR/start-monitoring.sh << 'EOF'
-#!/bin/bash
+# Add to crontab
+(sudo crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/backup-monitoring.sh") | sudo crontab -
 
-echo "🚀 Starting monitoring stack..."
+# Step 10: Final checks
+log_info "Step 10: Running final checks..."
 
-# Start monitoring services
-docker-compose -f docker-compose.monitoring.yml up -d
+sleep 30  # Wait for services to start
 
-echo "⏳ Waiting for services to start..."
-sleep 10
+# Check Prometheus
+if curl -f -s "http://localhost:$PROMETHEUS_PORT/-/healthy" > /dev/null; then
+    log_info "✅ Prometheus is running"
+else
+    log_error "❌ Prometheus health check failed"
+fi
 
-echo "📊 Monitoring services started:"
-echo "- Prometheus: http://localhost:9090"
-echo "- Grafana: http://localhost:3001 (admin/admin123)"
-echo "- Alertmanager: http://localhost:9093"
+# Check Grafana
+if curl -f -s "http://localhost:$GRAFANA_PORT/api/health" > /dev/null; then
+    log_info "✅ Grafana is running"
+else
+    log_error "❌ Grafana health check failed"
+fi
 
-echo "✅ Monitoring stack is ready!"
-EOF
+log_info "🎉 MONITORING SETUP COMPLETED!"
+log_info "=================================================="
+log_info "Grafana: http://localhost:$GRAFANA_PORT (admin/urgent-studio-admin)"
+log_info "Prometheus: http://localhost:$PROMETHEUS_PORT"
+log_info "Node Exporter: http://localhost:9100"
+log_info "=================================================="
 
-chmod +x $MONITOR_DIR/start-monitoring.sh
+log_warn "Next steps:"
+log_warn "1. Import Grafana dashboards for Go applications"
+log_warn "2. Configure alert notifications (email, Slack, etc.)"
+log_warn "3. Setup SSL certificates for monitoring endpoints"
+log_warn "4. Configure firewall rules"
+log_warn "5. Test all alerts"
 
-print_status "Performance monitoring setup completed!"
-print_status "Files created in $MONITOR_DIR/:"
-ls -la $MONITOR_DIR/
-
-echo ""
-print_status "Next steps:"
-echo "1. Start monitoring: cd $MONITOR_DIR && ./start-monitoring.sh"
-echo "2. Run performance tests: cd $MONITOR_DIR && ./performance-test.sh"
-echo "3. Check system health: cd $MONITOR_DIR && ./monitor.sh"
-echo ""
-print_status "Monitoring URLs:"
-echo "- Prometheus: http://localhost:9090"
-echo "- Grafana: http://localhost:3001 (admin/admin123)"
-echo "- Alertmanager: http://localhost:9093"
-
-print_warning "Remember to:"
-echo "- Configure email alerts in alertmanager.yml"
-echo "- Set up proper authentication for production"
-echo "- Configure firewall rules for monitoring ports"
-echo "- Set up SSL certificates for monitoring services"
-
-echo ""
-print_status "Performance monitoring setup completed! 🎉"
+echo "📊 Monitoring setup completed!"

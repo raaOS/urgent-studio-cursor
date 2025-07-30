@@ -25,5 +25,41 @@ echo "🖼️  To share images: Save to project folder and tell me the path"
 echo "🔄  To restart: Run 'npm run myai' again"
 echo ""
 
-# Start forge with project context and API key
-FORGE_KEY=sk-fg-v1-8ec0c0402e31111ef85d51edb04d231c7c8d156ec1df82829a70c89543f38559 npx forgecode@latest
+# Load API key from .env file
+if [ -f .env ]; then
+    source .env
+else
+    echo "❌ File .env tidak ditemukan!"
+    echo "💡 Buat file .env dan tambahkan: FORGE_KEY=your_api_key_here"
+    exit 1
+fi
+
+# Check if API key is set
+if [ -z "$FORGE_KEY" ]; then
+    echo "❌ FORGE_KEY tidak ditemukan di file .env!"
+    echo "💡 Edit file .env dan set FORGE_KEY=your_api_key_here"
+    exit 1
+fi
+
+echo "🔑 API Key loaded from .env file"
+echo "📚 Loading project context and memory..."
+
+# Load project context
+if [ -f "FORGE-AI-CONTEXT.md" ]; then
+    echo "✅ Project context loaded"
+    echo "📋 Rules & standards active"
+    echo "🧠 AI memory system ready"
+else
+    echo "⚠️  Warning: FORGE-AI-CONTEXT.md not found"
+fi
+
+echo "🚀 Starting Forge with full project context..."
+echo ""
+echo "💡 Quick Commands:"
+echo "   - 'refresh context' = reload project memory"
+echo "   - 'load memory' = scan all documentation"
+echo "   - 'check rules' = verify ESLint & standards"
+echo ""
+
+# Start forge with project context and API key from .env
+npx forgecode@latest

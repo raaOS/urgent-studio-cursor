@@ -22,9 +22,9 @@ async function PaymentPageComponent({ params }: { params: Promise<{ orderId: str
     }
     
     // Pisahkan string menjadi array ID
-    const orderIds = orderIdsParam.split(',');
+    const _orderIds = orderIdsParam.split(',');
 
-    return <PaymentClientPage params={{ orderId: orderIdsParam }} />;
+    return <PaymentClientPage orderIds={_orderIds} />;
 }
 
 
